@@ -1,10 +1,10 @@
 {
-  "name": "slasshy-cli-secure",
+  "name": "@slasshy/secure-cli",
   "version": "1.0.0",
-  "description": "Military-grade secure storage with steganography and Google Drive sync",
+  "description": "Military-grade secure storage with steganography & Google Drive sync",
   "main": "dist/index.js",
   "bin": {
-    "slasshy": "dist/index.js"
+    "slasshy": "./dist/index.js"
   },
   "type": "module",
   "scripts": {
@@ -12,16 +12,27 @@
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
     "test": "vitest",
-    "lint": "eslint src --ext .ts"
+    "lint": "eslint src --ext .ts",
+    "prepublishOnly": "npm run build"
   },
+  "publishConfig": {
+    "access": "restricted"
+  },
+  "files": [
+    "dist/**/*",
+    "README.md",
+    "LICENSE"
+  ],
   "keywords": [
     "security",
     "encryption",
     "steganography",
     "password-manager",
-    "vault"
+    "vault",
+    "aes-256",
+    "google-drive"
   ],
-  "author": "",
+  "author": "Slasshy",
   "license": "MIT",
   "dependencies": {
     "@google-cloud/local-auth": "^3.0.1",

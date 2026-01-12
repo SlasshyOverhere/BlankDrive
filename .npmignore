@@ -1,0 +1,21 @@
+# Ignore source files (only publish compiled)
+src/
+server/
+tests/
+
+# Development files
+*.ts
+!*.d.ts
+tsconfig.json
+.gitignore
+.env*
+*.log
+
+# IDE
+.vscode/
+.idea/
+
+# Other
+node_modules/
+coverage/
+.git/
