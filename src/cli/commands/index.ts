@@ -1,0 +1,9 @@
+export { initCommand } from './init.js';
+export { addCommand } from './add.js';
+export { getCommand } from './get.js';
+export { listCommand } from './list.js';
+export { deleteCommand } from './delete.js';
+export { syncCommand } from './sync.js';
+export { statusCommand } from './status.js';
+export { lockCommand } from './lock.js';
+export { authCommand } from './auth.js';

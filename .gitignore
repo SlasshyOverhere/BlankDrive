@@ -1,0 +1,19 @@
+node_modules/
+dist/
+.env
+*.log
+.DS_Store
+Thumbs.db
+
+# Vault files (never commit!)
+.slasshy/
+*.enc
+credentials.json
+token.json
+
+# IDE
+.vscode/
+.idea/
+
+# Test coverage
+coverage/
