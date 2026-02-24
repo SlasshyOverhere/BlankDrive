@@ -7,6 +7,8 @@ import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
 import {
+  authenticateDrive,
+  isDriveConnected,
   uploadToAppData,
   downloadFromAppData,
   downloadAppDataToBuffer,
@@ -22,6 +24,16 @@ const TEMP_FILES_DIR = path.join(process.env.TEMP || os.tmpdir(), 'slasshy_temp'
 
 // Number of parallel uploads/downloads
 const PARALLEL_LIMIT = 5;
+
+/**
+ * Initialize Drive client from persisted session when needed.
+ */
+async function ensureDriveAuthenticated(): Promise<void> {
+  if (isDriveConnected()) {
+    return;
+  }
+  await authenticateDrive();
+}
 
 export interface CloudFileChunk {
   chunkIndex: number;
@@ -84,6 +96,8 @@ export async function uploadFileToCloud(
   chunkCount: number,
   onProgress?: (chunksUploaded: number, totalChunks: number, bytesUploaded: number, totalBytes: number) => void
 ): Promise<CloudFileChunk[]> {
+  await ensureDriveAuthenticated();
+
   // Calculate total size first
   let totalBytes = 0;
   const chunkSizes: number[] = [];
@@ -168,6 +182,7 @@ export async function downloadFileFromCloud(
   cloudChunks: CloudFileChunk[],
   onProgress?: (chunksDownloaded: number, totalChunks: number, bytesDownloaded: number, totalBytes: number) => void
 ): Promise<void> {
+  await ensureDriveAuthenticated();
   await fs.mkdir(TEMP_FILES_DIR, { recursive: true });
 
   const totalBytes = cloudChunks.reduce((sum, c) => sum + c.size, 0);
@@ -213,6 +228,7 @@ export async function deleteFileFromCloud(
   entryId: string,
   cloudChunks: CloudFileChunk[]
 ): Promise<void> {
+  await ensureDriveAuthenticated();
   const errors: string[] = [];
 
   for (const chunk of cloudChunks) {
@@ -240,6 +256,7 @@ export async function deleteFileFromCloud(
  * Check if a file entry has all chunks uploaded to cloud
  */
 export async function isFileInCloud(entryId: string, chunkCount: number): Promise<boolean> {
+  await ensureDriveAuthenticated();
   const files = await listAppDataFiles(`slasshy_${entryId}_chunk_`);
   const availableNames = new Set(files.map((file) => file.name).filter((name): name is string => !!name));
 
@@ -256,6 +273,7 @@ export async function isFileInCloud(entryId: string, chunkCount: number): Promis
  * Get cloud storage usage (total bytes in appDataFolder)
  */
 export async function getCloudStorageUsage(): Promise<{ fileCount: number; totalBytes: number }> {
+  await ensureDriveAuthenticated();
   const files = await listAppDataFiles('slasshy_');
 
   let totalBytes = 0;
@@ -273,6 +291,7 @@ export async function getCloudStorageUsage(): Promise<{ fileCount: number; total
  * Check if cloud sync is available (has appDataFolder access)
  */
 export async function isCloudSyncAvailable(): Promise<boolean> {
+  await ensureDriveAuthenticated();
   return hasAppDataAccess();
 }
 
@@ -305,6 +324,7 @@ export async function streamDownloadToFile(
   entryKey: Buffer,
   onProgress?: (bytesProcessed: number, totalBytes: number) => void
 ): Promise<void> {
+  await ensureDriveAuthenticated();
   const totalBytes = cloudChunks.reduce((sum, c) => sum + c.size, 0);
   const parallelism = getAdaptiveParallelism();
 

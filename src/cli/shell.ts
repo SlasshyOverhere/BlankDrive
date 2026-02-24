@@ -27,6 +27,7 @@ import {
   totpCommand,
   syncCommand,
   settingsCommand,
+  webCommand,
 } from './commands/index.js';
 import { resetAutoLockTimer, startAutoLockTimer, stopAutoLockTimer, setAutoLockTimeout, getAutoLockSettings } from './autoLock.js';
 import { setTheme, getCurrentTheme, getAvailableThemes, showAllThemes, loadTheme, type ThemeName } from './themes.js';
@@ -146,13 +147,63 @@ const COMMANDS = [
   'breach', 'breach --all', 'pwned', 'hibp',
   'sync', 'sync --status', 'sync --conflicts', 'sync --force',
   'settings', 'settings --storage hidden', 'settings --storage public', 'settings --folder vault-data', 'settings --storage public --folder vault-data',
+  'web', 'web --open', 'web --port 4310', 'ui', 'ui --open',
   'auth', 'auth --setup', 'auth --logout',
   'lock',
   'destruct',
   'version',
-  'help',
+  'help', 'help --list',
   'exit', 'quit', 'q',
   'clear', 'cls',
+];
+
+type HelpCategory = 'Vault' | 'Entries' | 'Security' | 'Cloud & Preferences' | 'System';
+
+interface HelpEntry {
+  id: string;
+  usage: string;
+  run: string;
+  description: string;
+  category: HelpCategory;
+  aliases?: string;
+  runnable?: boolean;
+  danger?: boolean;
+  common?: boolean;
+}
+
+const HELP_ENTRIES: HelpEntry[] = [
+  { id: 'init', usage: 'init [--drive|--restore]', run: 'init', description: 'Create or restore vault', category: 'Vault', common: true },
+  { id: 'lock', usage: 'lock', run: 'lock', description: 'Lock vault and clear keys', category: 'Vault' },
+  { id: 'status', usage: 'status', run: 'status', description: 'Show vault + sync status', category: 'Vault', common: true },
+  { id: 'web', usage: 'web|ui [--open --port <n>]', run: 'web --open', description: 'Launch local web UI', category: 'Vault', common: true },
+  { id: 'add', usage: 'add', run: 'add', description: 'Add password entry', category: 'Entries', common: true },
+  { id: 'list', usage: 'list|ls [-f -t -c]', run: 'list', description: 'List entries with filters', category: 'Entries', common: true },
+  { id: 'get', usage: 'get <search> [-c -s]', run: 'get', description: 'View/retrieve an entry', category: 'Entries', common: true },
+  { id: 'edit', usage: 'edit [search]', run: 'edit', description: 'Edit an entry', category: 'Entries' },
+  { id: 'delete', usage: 'delete|rm [search] [-f]', run: 'delete', description: 'Delete an entry', category: 'Entries' },
+  { id: 'favorite', usage: 'favorite|fav [search]', run: 'favorite', description: 'Toggle favorite', category: 'Entries' },
+  { id: 'favorites', usage: 'favorites|favs', run: 'favorites', description: 'List favorites', category: 'Entries' },
+  { id: 'note', usage: 'note <add|view|edit|list> [arg]', run: 'note', description: 'Secure notes workflow', category: 'Entries' },
+  { id: 'upload', usage: 'upload|up [file]', run: 'upload', description: 'Encrypt and upload file', category: 'Entries', common: true },
+  { id: 'download', usage: 'download|dl [search]', run: 'download', description: 'Download file', category: 'Entries', common: true },
+  { id: 'generate', usage: 'generate|gen [options]', run: 'generate', description: 'Password/passphrase generator', category: 'Entries' },
+  { id: 'totp', usage: 'totp|otp <add|view|remove|list> [arg] [-c]', run: 'totp', description: 'Website 2FA/TOTP secrets', category: 'Security' },
+  { id: 'vault2fa', usage: '2fa-setup|vault-2fa|2fa', run: '2fa-setup', description: 'Protect vault with TOTP', category: 'Security' },
+  { id: 'breach', usage: 'breach|pwned|hibp [entry|--all]', run: 'breach --all', description: 'Check against HIBP breaches', category: 'Security' },
+  { id: 'audit', usage: 'audit [--all]', run: 'audit', description: 'Password strength + expiry audit', category: 'Security' },
+  { id: 'auditlog', usage: 'auditlog|log [n]', run: 'auditlog', description: 'Security event log', category: 'Security' },
+  { id: 'duress', usage: 'duress|panic', run: 'duress', description: 'Decoy vault/duress mode', category: 'Security' },
+  { id: 'auth', usage: 'auth [--setup|-l]', run: 'auth', description: 'Google Drive auth/connect', category: 'Cloud & Preferences', common: true },
+  { id: 'sync', usage: 'sync [--status|--conflicts|--force]', run: 'sync --status', description: 'Cloud sync operations', category: 'Cloud & Preferences', common: true },
+  { id: 'settings', usage: 'settings [--storage ...] [--folder ...]', run: 'settings', description: 'Storage mode and folder config', category: 'Cloud & Preferences' },
+  { id: 'autolock', usage: 'autolock [minutes]', run: 'autolock', description: 'Auto-lock timeout', category: 'Cloud & Preferences' },
+  { id: 'theme', usage: 'theme [name]', run: 'theme', description: 'Switch shell theme', category: 'Cloud & Preferences' },
+  { id: 'history', usage: 'history|hist [n]', run: 'history', description: 'Command history', category: 'Cloud & Preferences' },
+  { id: 'help', usage: 'help [--list]', run: 'help --list', description: 'Help output (plain/list)', category: 'System', runnable: true },
+  { id: 'version', usage: 'version', run: 'version', description: 'Show app version', category: 'System' },
+  { id: 'clear', usage: 'clear|cls', run: 'clear', description: 'Clear terminal', category: 'System' },
+  { id: 'exit', usage: 'exit|quit|q', run: 'exit', description: 'Exit shell', category: 'System', runnable: false },
+  { id: 'destruct', usage: 'destruct', run: 'destruct', description: 'Destroy vault permanently', category: 'System', danger: true, runnable: false },
 ];
 
 /**
@@ -190,41 +241,156 @@ function parseCommand(input: string): { cmd: string; args: string[] } {
 /**
  * Show available commands
  */
-function showHelp(): void {
-  console.log(chalk.bold('\n  Available Commands:\n'));
-  console.log(chalk.white('    init') + chalk.gray('              Initialize a new vault'));
-  console.log(chalk.white('    init --restore') + chalk.gray('    Restore vault from cloud'));
-  console.log(chalk.white('    add') + chalk.gray('               Add a new password entry'));
-  console.log(chalk.white('    generate, gen') + chalk.gray('     Generate a secure password'));
-  console.log(chalk.white('    list, ls') + chalk.gray('          List all entries'));
-  console.log(chalk.white('    get <search>') + chalk.gray('      Get an entry'));
-  console.log(chalk.white('    edit [search]') + chalk.gray('     Edit an existing entry'));
-  console.log(chalk.white('    favorite, fav') + chalk.gray('     Toggle favorite on an entry'));
-  console.log(chalk.white('    favorites, favs') + chalk.gray('   List favorite entries'));
-  console.log(chalk.white('    note [cmd]') + chalk.gray('        Secure notes (add/view/edit/list)'));
-  console.log(chalk.white('    totp [cmd]') + chalk.gray('        TOTP/2FA codes for websites'));
-  console.log(chalk.white('    2fa-setup') + chalk.gray('         Protect YOUR vault with 2FA'));
-  console.log(chalk.white('    breach [entry]') + chalk.gray('    Check passwords against breach database'));
-  console.log(chalk.white('    audit') + chalk.gray('             Check password security & expiry'));
-  console.log(chalk.white('    delete, rm') + chalk.gray('        Delete an entry'));
-  console.log(chalk.white('    upload, up') + chalk.gray('        Upload a file'));
-  console.log(chalk.white('    download, dl') + chalk.gray('      Download a file'));
-  console.log(chalk.white('    status') + chalk.gray('            Show vault status'));
-  console.log(chalk.white('    autolock [min]') + chalk.gray('    Set auto-lock timeout (0 to disable)'));
-  console.log(chalk.white('    theme [name]') + chalk.gray('      Change color theme'));
-  console.log(chalk.white('    history [n]') + chalk.gray('       Show last n commands (default: 20)'));
-  console.log(chalk.white('    auditlog [n]') + chalk.gray('      Show security audit log'));
-  console.log(chalk.white('    duress') + chalk.gray('            Configure duress/panic password'));
-  console.log(chalk.white('    sync') + chalk.gray('              Sync vault with cloud'));
-  console.log(chalk.white('    settings') + chalk.gray('          Manage app settings (mode + public folder)'));
-  console.log(chalk.white('    auth') + chalk.gray('              Authenticate with Google Drive'));
-  console.log(chalk.white('    auth --setup') + chalk.gray('      Set/update Google OAuth credentials'));
-  console.log(chalk.white('    lock') + chalk.gray('              Lock the vault'));
-  console.log(chalk.red('    destruct') + chalk.gray('          ⚠️  Destroy vault completely'));
-  console.log(chalk.white('    version') + chalk.gray('           Show version number'));
-  console.log(chalk.white('    help') + chalk.gray('              Show this help'));
-  console.log(chalk.white('    exit, quit, q') + chalk.gray('     Exit shell'));
+function showHelpList(): void {
+  console.log(chalk.bold('\n  BLANK Shell Help\n'));
+  console.log(chalk.gray('  Tip: run "help" for interactive command picker, or "help --list" for this view.\n'));
+
+  console.log(chalk.cyan('  Vault'));
+  console.log(chalk.white('    init [--drive|--restore], lock, status, version'));
+  console.log(chalk.white('    web|ui [--open --port <n>], help, clear|cls, exit|quit|q'));
+
+  console.log(chalk.cyan('\n  Entries'));
+  console.log(chalk.white('    add, list|ls [-f -t -c], get <search> [-c -s], edit [search], delete|rm [search] [-f]'));
+  console.log(chalk.white('    favorite|fav [search], favorites|favs'));
+  console.log(chalk.white('    note <add|view|edit|list> [arg], upload|up [file], download|dl [search], generate|gen [options]'));
+
+  console.log(chalk.cyan('\n  Security'));
+  console.log(chalk.white('    totp|otp <add|view|remove|list> [arg] [-c], 2fa-setup|vault-2fa|2fa'));
+  console.log(chalk.white('    breach|pwned|hibp [entry|--all], audit [--all], auditlog|log [n], duress|panic'));
+
+  console.log(chalk.cyan('\n  Cloud & Preferences'));
+  console.log(chalk.white('    auth [--setup|-l], sync [--status|--conflicts|--force]'));
+  console.log(chalk.white('    settings [--storage hidden|public] [--folder <name>], autolock [minutes], theme [name], history|hist [n]'));
+
+  console.log(chalk.red('\n  Danger'));
+  console.log(chalk.red('    destruct') + chalk.gray('  (permanently destroy vault)'));
   console.log('');
+}
+
+async function showInteractiveHelp(): Promise<void> {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    showHelpList();
+    return;
+  }
+
+  const categoryOrder: Array<'common' | HelpCategory | 'all'> = [
+    'common',
+    'Vault',
+    'Entries',
+    'Security',
+    'Cloud & Preferences',
+    'System',
+    'all',
+  ];
+
+  const categoryLabel = (value: 'common' | HelpCategory | 'all'): string => {
+    if (value === 'common') return 'Common Commands';
+    if (value === 'all') return 'All Commands';
+    return value;
+  };
+
+  console.log(chalk.bold('\n  Interactive Help\n'));
+
+  while (true) {
+    const { category } = await inquirer.prompt<{ category: 'common' | HelpCategory | 'all' | 'exit' }>([
+      {
+        type: 'list',
+        name: 'category',
+        message: 'Choose a command group:',
+        pageSize: 10,
+        choices: [
+          ...categoryOrder.map((value) => ({
+            name: categoryLabel(value),
+            value,
+          })),
+          { name: 'Exit Help', value: 'exit' },
+        ],
+      },
+    ]);
+
+    if (category === 'exit') {
+      console.log('');
+      return;
+    }
+
+    const scopedEntries = HELP_ENTRIES.filter((entry) => {
+      if (category === 'all') return true;
+      if (category === 'common') return entry.common === true;
+      return entry.category === category;
+    });
+
+    const commandChoices: Array<{ name: string; value: string } | inquirer.Separator> = [];
+    scopedEntries.forEach((entry, index) => {
+      const marker = entry.danger ? chalk.red('⚠ ') : '';
+      commandChoices.push({
+        name: `${marker}${chalk.white(entry.usage)} ${chalk.gray('- ' + entry.description)}`,
+        value: entry.id,
+      });
+      if (index < scopedEntries.length - 1) {
+        commandChoices.push(new inquirer.Separator(' '));
+      }
+    });
+
+    const { selected } = await inquirer.prompt<{ selected: string }>([
+      {
+        type: 'list',
+        name: 'selected',
+        message: `Commands in ${categoryLabel(category)}:`,
+        pageSize: 15,
+        choices: [
+          ...commandChoices,
+          new inquirer.Separator(' '),
+          { name: 'Back', value: '__back' },
+        ],
+      },
+    ]);
+
+    if (selected === '__back') {
+      continue;
+    }
+
+    const entry = HELP_ENTRIES.find((item) => item.id === selected);
+    if (!entry) {
+      continue;
+    }
+
+    console.log('');
+    console.log(chalk.bold(`  ${entry.usage}`));
+    console.log(chalk.gray(`  ${entry.description}`));
+    if (entry.aliases) {
+      console.log(chalk.gray(`  Aliases: ${entry.aliases}`));
+    }
+    console.log(chalk.gray(`  Runs: BLANK ${entry.run}`));
+    console.log('');
+
+    const choices: Array<{ name: string; value: 'run' | 'back' | 'list' }> = [
+      { name: 'Back to picker', value: 'back' },
+      { name: 'Show text help list', value: 'list' },
+    ];
+    if (entry.runnable !== false) {
+      choices.unshift({ name: 'Run this command now', value: 'run' });
+    }
+
+    const { action } = await inquirer.prompt<{ action: 'run' | 'back' | 'list' }>([
+      {
+        type: 'list',
+        name: 'action',
+        message: 'Next action:',
+        choices,
+      },
+    ]);
+
+    if (action === 'list') {
+      showHelpList();
+      continue;
+    }
+
+    if (action === 'run') {
+      const { cmd, args } = parseCommand(entry.run);
+      await executeCommand(cmd, args);
+      console.log('');
+    }
+  }
 }
 
 /**
@@ -661,6 +827,19 @@ async function executeCommand(cmd: string, args: string[]): Promise<boolean> {
         await settingsCommand(settingsOptions);
         break;
 
+      case 'web':
+      case 'ui':
+        const webOptions: { port?: string; open?: boolean } = {};
+        const portIdx = args.findIndex((arg) => arg === '--port' || arg === '-p');
+        if (portIdx !== -1 && args[portIdx + 1]) {
+          webOptions.port = args[portIdx + 1];
+        }
+        if (args.includes('--open') || args.includes('-o')) {
+          webOptions.open = true;
+        }
+        await webCommand(webOptions);
+        break;
+
       case 'lock':
         await lockCommand();
         break;
@@ -679,7 +858,11 @@ async function executeCommand(cmd: string, args: string[]): Promise<boolean> {
 
       case 'help':
       case '?':
-        showHelp();
+        if (args.includes('--list') || args.includes('-l') || args.includes('--plain')) {
+          showHelpList();
+        } else {
+          await showInteractiveHelp();
+        }
         break;
 
       case 'exit':
@@ -807,10 +990,21 @@ export async function startShell(): Promise<void> {
         if (await vaultExists()) {
           vaultCreated = true;
         }
+      } else if (cmd === 'web' || cmd === 'ui') {
+        const webOptions: { port?: string; open?: boolean } = {};
+        const portIdx = args.findIndex((arg) => arg === '--port' || arg === '-p');
+        if (portIdx !== -1 && args[portIdx + 1]) {
+          webOptions.port = args[portIdx + 1];
+        }
+        if (args.includes('--open') || args.includes('-o')) {
+          webOptions.open = true;
+        }
+        await webCommand(webOptions);
       } else if (cmd === 'help' || cmd === '?') {
         console.log(chalk.yellow('\n  Please create a vault first:\n'));
         console.log(chalk.cyan('    init') + chalk.gray('          Create a new vault'));
         console.log(chalk.cyan('    init --restore') + chalk.gray('  Restore from cloud backup'));
+        console.log(chalk.cyan('    web --open') + chalk.gray('    Open local web UI'));
         console.log(chalk.cyan('    exit') + chalk.gray('          Exit the application\n'));
       } else if (cmd !== '') {
         console.log(chalk.red('\n  Please create a vault first using "init"\n'));

@@ -17,3 +17,4 @@ export { generateCommand, quickGenerate } from './generate.js';
 export { totpCommand } from './totp.js';
 export { syncCommand, showSyncHelp } from './sync.js';
 export { settingsCommand } from './settings.js';
+export { webCommand } from './web.js';

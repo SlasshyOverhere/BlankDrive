@@ -22,6 +22,7 @@ import {
   destructCommand,
   generateCommand,
   settingsCommand,
+  webCommand,
 } from './cli/commands/index.js';
 import { startShell } from './cli/shell.js';
 
@@ -181,6 +182,17 @@ program
   .option('--folder <name>', 'Public folder name under BlankDrive')
   .action(async (options) => {
     await settingsCommand(options);
+  });
+
+// Web UI command
+program
+  .command('web')
+  .alias('ui')
+  .description('Launch local BlankDrive web interface')
+  .option('-p, --port <number>', 'Port to listen on (default: 4310)')
+  .option('-o, --open', 'Open browser automatically')
+  .action(async (options) => {
+    await webCommand(options);
   });
 
 // Lock command

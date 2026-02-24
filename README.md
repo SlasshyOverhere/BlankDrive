@@ -6,6 +6,15 @@
 
 Client-side, zero-knowledge vault for passwords, notes, TOTP secrets, and encrypted files synced to Google Drive.
 
+Current release: `0.0.3`
+Release notes: see `CHANGELOG.md`
+
+## What's New In 0.0.3
+
+- Added a local Web UI via `BLANK web` / `BLANK ui` with vault unlock/init, entry CRUD, file upload/download, and in-browser CLI execution.
+- Added improved shell help with interactive command picker plus `help --list`.
+- Fixed cloud file operations to auto-authenticate Drive sessions before sync/upload/download actions.
+
 ## CLI Use Case Demo
 
 ![BlankDrive CLI use case demo](assets/blankdrive-usecase.gif)
@@ -220,6 +229,7 @@ BLANK settings [--storage hidden|public] [--folder <name>]
 BLANK auth [--setup|--logout]
 BLANK generate [options]
 BLANK status
+BLANK web [--port <number>] [--open]
 BLANK lock
 BLANK destruct
 BLANK version
@@ -243,6 +253,22 @@ Shell includes additional commands like:
 - `theme`
 - `history`
 - `auditlog`
+
+## Web UI (Local)
+
+BlankDrive now includes a local web console for vault management (including password/note CRUD and file upload/download):
+
+```bash
+BLANK web --open
+```
+
+Useful options:
+
+- `--port <number>` (default: `4310`)
+- `--open` (open the browser automatically)
+
+The web UI runs locally and does not use any remote backend.
+It only accepts requests via `localhost` (for example `http://localhost:4310`).
 
 ## Restore Flow
 
