@@ -268,7 +268,6 @@ function ensureValidUrl(value: string | undefined, key: string): void {
   }
 
   try {
-    // eslint-disable-next-line no-new
     new URL(value);
   } catch {
     throw new HttpError(400, `${key} must be a valid URL.`);
