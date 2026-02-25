@@ -467,6 +467,43 @@ button:disabled {
   gap: 9px;
 }
 
+.input-group {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.input-group input {
+  flex: 1;
+}
+
+.btn-icon {
+  padding: 0;
+  width: 42px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.btn-icon:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--surface-2);
+}
+
+.btn-icon svg {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+}
+
 .form-actions {
   display: flex;
   gap: 8px;
@@ -625,11 +662,11 @@ input[type="file"]::file-selector-button {
     <!-- ═══════════ VAULT CONTROLS ═══════════ -->
     <section class="vault-controls">
       <form id="initForm">
-        <input id="initPassword" type="password" autocomplete="new-password" placeholder="New master password" required style="max-width:260px">
+        <input id="initPassword" type="password" autocomplete="new-password" placeholder="New master password" aria-label="New master password" required style="max-width:260px">
         <button type="submit" class="btn-danger btn-sm">Create Vault</button>
       </form>
       <form id="unlockForm">
-        <input id="unlockPassword" type="password" autocomplete="current-password" placeholder="Master password" required style="max-width:260px">
+        <input id="unlockPassword" type="password" autocomplete="current-password" placeholder="Master password" aria-label="Master password" required style="max-width:260px">
         <button type="submit" class="btn-primary btn-sm">Unlock</button>
       </form>
       <button id="lockButton" type="button" class="btn-ghost btn-sm">Lock</button>
@@ -649,8 +686,8 @@ input[type="file"]::file-selector-button {
           <button id="reloadEntries" type="button" class="btn-ghost btn-sm">Reload</button>
         </div>
         <div class="filters">
-          <input id="search" type="search" placeholder="Search entries…">
-          <select id="typeFilter"><option value="all">All</option><option value="password">Passwords</option><option value="note">Notes</option><option value="file">Files</option></select>
+          <input id="search" type="search" placeholder="Search entries…" aria-label="Search entries">
+          <select id="typeFilter" aria-label="Filter by type"><option value="all">All</option><option value="password">Passwords</option><option value="note">Notes</option><option value="file">Files</option></select>
         </div>
         <ul id="entryList" class="entry-list"></ul>
       </aside>
@@ -660,14 +697,14 @@ input[type="file"]::file-selector-button {
         <div class="card-title"><span><span class="icon"></span>Add Entry</span></div>
         <p class="hint" style="margin-bottom:12px">Create passwords, secure notes, or upload files.</p>
         <form id="createForm" class="form-stack">
-          <select id="createType"><option value="password">Password Entry</option><option value="note">Secure Note</option></select>
-          <input id="createTitle" type="text" maxlength="256" placeholder="Title" required>
+          <select id="createType" aria-label="Entry type"><option value="password">Password Entry</option><option value="note">Secure Note</option></select>
+          <input id="createTitle" type="text" maxlength="256" placeholder="Title" aria-label="Title" required>
           <div id="createPwd" class="form-stack">
-            <input id="createUsername" type="text" maxlength="256" placeholder="Username (optional)">
-            <input id="createPassword" type="text" maxlength="4096" placeholder="Password (optional)">
-            <input id="createUrl" type="url" maxlength="2048" placeholder="URL (optional)">
-            <input id="createCategory" type="text" maxlength="64" placeholder="Category (optional)">
-            <textarea id="createNotes" maxlength="65536" placeholder="Notes (optional)"></textarea>
+            <input id="createUsername" type="text" maxlength="256" placeholder="Username (optional)" aria-label="Username">
+            <input id="createPassword" type="text" maxlength="4096" placeholder="Password (optional)" aria-label="Password">
+            <input id="createUrl" type="url" maxlength="2048" placeholder="URL (optional)" aria-label="URL">
+            <input id="createCategory" type="text" maxlength="64" placeholder="Category (optional)" aria-label="Category">
+            <textarea id="createNotes" maxlength="65536" placeholder="Notes (optional)" aria-label="Notes"></textarea>
           </div>
           <div id="createNote" class="form-stack hidden"><textarea id="createContent" maxlength="1048576" placeholder="Note content"></textarea></div>
           <button id="createBtn" type="submit" class="btn-primary">Save Entry</button>
@@ -691,17 +728,27 @@ input[type="file"]::file-selector-button {
         <div class="card-title"><span><span class="icon"></span>Entry Detail</span></div>
         <p id="detailHint" class="hint">Select an entry to inspect, edit, or download.</p>
         <form id="detailForm" class="form-stack hidden">
-          <input id="detailTitle" type="text" maxlength="256" required>
+          <input id="detailTitle" type="text" maxlength="256" aria-label="Title" required>
           <p style="display:flex;align-items:center;gap:10px">
             <span id="detailType" class="pill password">password</span>
             <span id="detailMod" class="meta-text" style="font-size:.78rem"></span>
           </p>
           <div id="detailPwd" class="form-stack">
-            <input id="detailUsername" type="text" maxlength="256" placeholder="Username">
-            <input id="detailPassword" type="text" maxlength="4096" placeholder="Password">
-            <input id="detailUrl" type="url" maxlength="2048" placeholder="URL">
-            <input id="detailCategory" type="text" maxlength="64" placeholder="Category">
-            <textarea id="detailNotes" maxlength="65536" placeholder="Notes"></textarea>
+            <div class="input-group">
+              <input id="detailUsername" type="text" maxlength="256" placeholder="Username" aria-label="Username">
+              <button id="copyUsernameBtn" type="button" class="btn-icon" title="Copy username" aria-label="Copy username">
+                <svg viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
+              </button>
+            </div>
+            <div class="input-group">
+              <input id="detailPassword" type="text" maxlength="4096" placeholder="Password" aria-label="Password">
+              <button id="copyPasswordBtn" type="button" class="btn-icon" title="Copy password" aria-label="Copy password">
+                <svg viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
+              </button>
+            </div>
+            <input id="detailUrl" type="url" maxlength="2048" placeholder="URL" aria-label="URL">
+            <input id="detailCategory" type="text" maxlength="64" placeholder="Category" aria-label="Category">
+            <textarea id="detailNotes" maxlength="65536" placeholder="Notes" aria-label="Notes"></textarea>
           </div>
           <div id="detailNote" class="form-stack hidden"><textarea id="detailContent" maxlength="1048576" placeholder="Note content"></textarea></div>
           <div id="detailFile" class="form-stack hidden"><p id="fileInfo" class="hint"></p></div>
@@ -754,6 +801,7 @@ input[type="file"]::file-selector-button {
       uploadForm:document.getElementById('uploadForm'),uploadFile:document.getElementById('uploadFile'),uploadTitle:document.getElementById('uploadTitle'),uploadNotes:document.getElementById('uploadNotes'),uploadBtn:document.getElementById('uploadBtn'),
       detailHint:document.getElementById('detailHint'),detailForm:document.getElementById('detailForm'),detailTitle:document.getElementById('detailTitle'),detailType:document.getElementById('detailType'),detailMod:document.getElementById('detailMod'),detailPwd:document.getElementById('detailPwd'),detailUsername:document.getElementById('detailUsername'),detailPassword:document.getElementById('detailPassword'),detailUrl:document.getElementById('detailUrl'),detailCategory:document.getElementById('detailCategory'),detailNotes:document.getElementById('detailNotes'),detailNote:document.getElementById('detailNote'),detailContent:document.getElementById('detailContent'),detailFile:document.getElementById('detailFile'),fileInfo:document.getElementById('fileInfo'),saveDetail:document.getElementById('saveDetail'),downloadFile:document.getElementById('downloadFile'),toggleFav:document.getElementById('toggleFav'),deleteEntry:document.getElementById('deleteEntry'),
       cliForm:document.getElementById('cliForm'),cliCommand:document.getElementById('cliCommand'),runCliBtn:document.getElementById('runCliBtn'),cliQuickStatus:document.getElementById('cliQuickStatus'),cliQuickSync:document.getElementById('cliQuickSync'),cliQuickSettings:document.getElementById('cliQuickSettings'),cliOutput:document.getElementById('cliOutput'),
+      copyUsernameBtn:document.getElementById('copyUsernameBtn'),copyPasswordBtn:document.getElementById('copyPasswordBtn'),
       toast:document.getElementById('toast')};
 
     let toastTimer=null,searchTimer=null;
@@ -761,6 +809,7 @@ input[type="file"]::file-selector-button {
     const dt=v=>v?new Date(v).toLocaleString():'Never';
 
     function showToast(msg){el.toast.textContent=msg;el.toast.classList.add('show');if(toastTimer)clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.toast.classList.remove('show'),2800)}
+    async function copyToClipboard(text,label){if(!text)return;try{await navigator.clipboard.writeText(text);showToast(label+' copied.')}catch{showToast('Failed to copy.')}}
     function busy(btn,on,label,idle){if(!btn)return;if(!btn.dataset.idle)btn.dataset.idle=idle||btn.textContent||'';btn.disabled=on;btn.textContent=on?label:(idle||btn.dataset.idle)}
     function switchCreate(){const note=el.createType.value==='note';el.createPwd.classList.toggle('hidden',note);el.createNote.classList.toggle('hidden',!note)}
     function switchDetail(type){const note=type==='note',file=type==='file';el.detailPwd.classList.toggle('hidden',note||file);el.detailNote.classList.toggle('hidden',!note);el.detailFile.classList.toggle('hidden',!file);el.saveDetail.disabled=file;el.downloadFile.classList.toggle('hidden',!file)}
@@ -850,6 +899,8 @@ input[type="file"]::file-selector-button {
     el.downloadFile.addEventListener('click',()=>{void onDownload()});
     el.toggleFav.addEventListener('click',()=>{void onToggleFav()});
     el.deleteEntry.addEventListener('click',()=>{void onDelete()});
+    el.copyUsernameBtn.addEventListener('click',()=>{void copyToClipboard(el.detailUsername.value,'Username')});
+    el.copyPasswordBtn.addEventListener('click',()=>{void copyToClipboard(el.detailPassword.value,'Password')});
     el.cliForm.addEventListener('submit',ev=>{void onRunCli(ev)});
     el.cliQuickStatus.addEventListener('click',()=>{el.cliCommand.value='status';void runCliCommandFromUi('status')});
     el.cliQuickSync.addEventListener('click',()=>{el.cliCommand.value='sync --status';void runCliCommandFromUi('sync --status')});
