@@ -1286,11 +1286,13 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
     }
 
     if (error instanceof Error) {
-      sendJson(res, 500, { error: error.message });
+      console.error('Internal Server Error:', error);
+      sendJson(res, 500, { error: 'Internal Server Error' });
       return;
     }
 
-    sendJson(res, 500, { error: 'Unexpected server error.' });
+    console.error('Unknown Server Error:', error);
+    sendJson(res, 500, { error: 'Internal Server Error' });
   }
 }
 
