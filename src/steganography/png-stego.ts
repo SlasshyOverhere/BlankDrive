@@ -127,7 +127,7 @@ export async function embedInPNG(
 
       // Modify R channel LSB
       if (byteIndex < payloadLength) {
-        const bit = (payload[byteIndex] >> bitPos) & 1;
+        const bit = (payload[byteIndex]! >> bitPos) & 1;
         png.data[idx] = (png.data[idx]! & 0xFE) | bit;
 
         bitPos--;
@@ -139,7 +139,7 @@ export async function embedInPNG(
 
       // Modify G channel LSB
       if (byteIndex < payloadLength) {
-        const bit = (payload[byteIndex] >> bitPos) & 1;
+        const bit = (payload[byteIndex]! >> bitPos) & 1;
         png.data[idx + 1] = (png.data[idx + 1]! & 0xFE) | bit;
 
         bitPos--;
@@ -151,7 +151,7 @@ export async function embedInPNG(
 
       // Modify B channel LSB
       if (byteIndex < payloadLength) {
-        const bit = (payload[byteIndex] >> bitPos) & 1;
+        const bit = (payload[byteIndex]! >> bitPos) & 1;
         png.data[idx + 2] = (png.data[idx + 2]! & 0xFE) | bit;
 
         bitPos--;
