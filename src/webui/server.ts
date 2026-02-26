@@ -5,7 +5,7 @@ import {
   type ServerResponse,
 } from 'node:http';
 import { execFile } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -98,7 +98,14 @@ export interface WebUiServerHandle {
   close: () => Promise<void>;
 }
 
+function setSecurityHeaders(res: ServerResponse): void {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+}
+
 function sendJson(res: ServerResponse, statusCode: number, payload: unknown): void {
+  setSecurityHeaders(res);
   res.writeHead(statusCode, {
     'content-type': 'application/json; charset=utf-8',
     'cache-control': 'no-store',
@@ -106,10 +113,12 @@ function sendJson(res: ServerResponse, statusCode: number, payload: unknown): vo
   res.end(JSON.stringify(payload));
 }
 
-function sendHtml(res: ServerResponse, html: string): void {
+function sendHtml(res: ServerResponse, html: string, nonce: string): void {
+  setSecurityHeaders(res);
   res.writeHead(200, {
     'content-type': 'text/html; charset=utf-8',
     'cache-control': 'no-store',
+    'content-security-policy': `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none';`,
   });
   res.end(html);
 }
@@ -1263,7 +1272,8 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
     const requestUrl = new URL(req.url ?? '/', 'http://localhost');
 
     if (requestUrl.pathname === '/' && method === 'GET') {
-      sendHtml(res, renderWebUiHtml());
+      const nonce = randomBytes(16).toString('base64');
+      sendHtml(res, renderWebUiHtml(nonce), nonce);
       return;
     }
 
