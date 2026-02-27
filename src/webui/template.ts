@@ -216,8 +216,8 @@ body::before {
 }
 
 .vault-controls {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto auto auto;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
   padding: 14px 16px;
@@ -236,6 +236,7 @@ body::before {
   align-items: center;
   gap: 8px;
   min-width: 0;
+  margin-left: auto;
 }
 
 #vaultPath {
@@ -529,13 +530,11 @@ input[type="file"]::file-selector-button {
 }
 
 @media (max-width: 1240px) {
-  .vault-controls {
-    grid-template-columns: minmax(0,1fr) minmax(0,1fr) auto;
-  }
-
   .vault-meta {
-    grid-column: 1 / -1;
+    width: 100%;
     justify-content: flex-start;
+    margin-left: 0;
+    margin-top: 4px;
   }
 
   .main-grid {
@@ -558,7 +557,8 @@ input[type="file"]::file-selector-button {
   }
 
   .vault-controls {
-    grid-template-columns: 1fr;
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .vault-controls form {
@@ -625,11 +625,11 @@ input[type="file"]::file-selector-button {
     <!-- ═══════════ VAULT CONTROLS ═══════════ -->
     <section class="vault-controls">
       <form id="initForm">
-        <input id="initPassword" type="password" autocomplete="new-password" placeholder="New master password" required style="max-width:260px">
+        <input id="initPassword" type="password" autocomplete="new-password" placeholder="New master password" aria-label="New master password" required style="max-width:260px">
         <button type="submit" class="btn-danger btn-sm">Create Vault</button>
       </form>
       <form id="unlockForm">
-        <input id="unlockPassword" type="password" autocomplete="current-password" placeholder="Master password" required style="max-width:260px">
+        <input id="unlockPassword" type="password" autocomplete="current-password" placeholder="Master password" aria-label="Master password" required style="max-width:260px">
         <button type="submit" class="btn-primary btn-sm">Unlock</button>
       </form>
       <button id="lockButton" type="button" class="btn-ghost btn-sm">Lock</button>
@@ -649,8 +649,8 @@ input[type="file"]::file-selector-button {
           <button id="reloadEntries" type="button" class="btn-ghost btn-sm">Reload</button>
         </div>
         <div class="filters">
-          <input id="search" type="search" placeholder="Search entries…">
-          <select id="typeFilter"><option value="all">All</option><option value="password">Passwords</option><option value="note">Notes</option><option value="file">Files</option></select>
+          <input id="search" type="search" placeholder="Search entries…" aria-label="Search entries">
+          <select id="typeFilter" aria-label="Filter by type"><option value="all">All</option><option value="password">Passwords</option><option value="note">Notes</option><option value="file">Files</option></select>
         </div>
         <ul id="entryList" class="entry-list"></ul>
       </aside>
@@ -776,8 +776,17 @@ input[type="file"]::file-selector-button {
       else{el.badge.textContent='Unlocked';el.badge.className='badge ok';el.meta.textContent='Created: '+dt(s.status.stats?s.status.stats.created:null)}
       el.entryCount.textContent='Entries: '+String(s.status.stats?s.status.stats.entryCount:0);
       el.vaultPath.textContent=s.status.vaultPath||'';
+
+      el.initForm.classList.toggle('hidden', s.status.vaultExists);
+      el.unlockForm.classList.toggle('hidden', !s.status.vaultExists || s.status.unlocked);
+      el.lockButton.classList.toggle('hidden', !s.status.unlocked);
+
       setUnlocked(Boolean(s.status.unlocked));
-      if(!s.status.unlocked){s.entries=[];s.selectedId=null;s.selected=null;renderEntries();showDetail('Unlock vault to inspect entries.')}
+      if(!s.status.unlocked){
+        s.entries=[];s.selectedId=null;s.selected=null;renderEntries();showDetail('Unlock vault to inspect entries.');
+        if(!s.status.vaultExists) setTimeout(()=>el.initPassword.focus(), 100);
+        else setTimeout(()=>el.unlockPassword.focus(), 100);
+      }
     }
 
     function renderEntries(){
