@@ -193,9 +193,9 @@ export async function extractFromPNG(imagePath: string): Promise<ExtractResult> 
     }
 
     if (bit) {
-      extractedBuffer[byteIndex] |= (1 << bitOffset);
+      extractedBuffer[byteIndex]! |= (1 << bitOffset);
     } else {
-      extractedBuffer[byteIndex] &= ~(1 << bitOffset);
+      extractedBuffer[byteIndex]! &= ~(1 << bitOffset);
     }
 
     bitIndex++;
@@ -284,7 +284,7 @@ export async function hasEmbeddedData(imagePath: string): Promise<boolean> {
         const byteIndex = Math.floor(i / 8);
         const bitOffset = 7 - (i % 8);
         if (bits[i]) {
-            magicBuffer[byteIndex] |= (1 << bitOffset);
+            magicBuffer[byteIndex]! |= (1 << bitOffset);
         }
     }
     return magicBuffer.equals(MAGIC_BYTES);
