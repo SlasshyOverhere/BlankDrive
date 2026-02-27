@@ -1,4 +1,4 @@
-export function renderWebUiHtml(): string {
+export function renderWebUiHtml(nonce: string): string {
   return `<!doctype html>
 <html lang="en" data-theme="dark">
 <head>
@@ -733,7 +733,7 @@ input[type="file"]::file-selector-button {
   </div>
   <div id="toast" class="toast"></div>
 
-  <script type="module">
+  <script type="module" nonce="${nonce}">
     const DEFAULT_UPLOAD_CHUNK_BYTES=2*1024*1024;
 
     /* ── Theme ── */

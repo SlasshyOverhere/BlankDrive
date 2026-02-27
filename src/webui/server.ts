@@ -1263,7 +1263,12 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
     const requestUrl = new URL(req.url ?? '/', 'http://localhost');
 
     if (requestUrl.pathname === '/' && method === 'GET') {
-      sendHtml(res, renderWebUiHtml());
+      const nonce = randomUUID();
+      res.setHeader('Content-Security-Policy', `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src data:; connect-src 'self'; base-uri 'none'; form-action 'self';`);
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('X-Frame-Options', 'DENY');
+      res.setHeader('Referrer-Policy', 'no-referrer');
+      sendHtml(res, renderWebUiHtml(nonce));
       return;
     }
 
