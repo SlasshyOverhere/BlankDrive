@@ -625,11 +625,11 @@ input[type="file"]::file-selector-button {
     <!-- ═══════════ VAULT CONTROLS ═══════════ -->
     <section class="vault-controls">
       <form id="initForm">
-        <input id="initPassword" type="password" autocomplete="new-password" placeholder="New master password" required style="max-width:260px">
+        <input id="initPassword" aria-label="New master password" type="password" autocomplete="new-password" placeholder="New master password" required style="max-width:260px">
         <button type="submit" class="btn-danger btn-sm">Create Vault</button>
       </form>
       <form id="unlockForm">
-        <input id="unlockPassword" type="password" autocomplete="current-password" placeholder="Master password" required style="max-width:260px">
+        <input id="unlockPassword" aria-label="Master password" type="password" autocomplete="current-password" placeholder="Master password" required style="max-width:260px">
         <button type="submit" class="btn-primary btn-sm">Unlock</button>
       </form>
       <button id="lockButton" type="button" class="btn-ghost btn-sm">Lock</button>
@@ -649,8 +649,8 @@ input[type="file"]::file-selector-button {
           <button id="reloadEntries" type="button" class="btn-ghost btn-sm">Reload</button>
         </div>
         <div class="filters">
-          <input id="search" type="search" placeholder="Search entries…">
-          <select id="typeFilter"><option value="all">All</option><option value="password">Passwords</option><option value="note">Notes</option><option value="file">Files</option></select>
+          <input id="search" aria-label="Search entries" type="search" placeholder="Search entries…">
+          <select id="typeFilter" aria-label="Filter entries by type"><option value="all">All</option><option value="password">Passwords</option><option value="note">Notes</option><option value="file">Files</option></select>
         </div>
         <ul id="entryList" class="entry-list"></ul>
       </aside>
@@ -660,16 +660,16 @@ input[type="file"]::file-selector-button {
         <div class="card-title"><span><span class="icon"></span>Add Entry</span></div>
         <p class="hint" style="margin-bottom:12px">Create passwords, secure notes, or upload files.</p>
         <form id="createForm" class="form-stack">
-          <select id="createType"><option value="password">Password Entry</option><option value="note">Secure Note</option></select>
-          <input id="createTitle" type="text" maxlength="256" placeholder="Title" required>
+          <select id="createType" aria-label="Select entry type"><option value="password">Password Entry</option><option value="note">Secure Note</option></select>
+          <input id="createTitle" aria-label="Entry title" type="text" maxlength="256" placeholder="Title" required>
           <div id="createPwd" class="form-stack">
-            <input id="createUsername" type="text" maxlength="256" placeholder="Username (optional)">
-            <input id="createPassword" type="text" maxlength="4096" placeholder="Password (optional)">
-            <input id="createUrl" type="url" maxlength="2048" placeholder="URL (optional)">
-            <input id="createCategory" type="text" maxlength="64" placeholder="Category (optional)">
-            <textarea id="createNotes" maxlength="65536" placeholder="Notes (optional)"></textarea>
+            <input id="createUsername" aria-label="Username" type="text" maxlength="256" placeholder="Username (optional)">
+            <input id="createPassword" aria-label="Password" type="text" maxlength="4096" placeholder="Password (optional)">
+            <input id="createUrl" aria-label="URL" type="url" maxlength="2048" placeholder="URL (optional)">
+            <input id="createCategory" aria-label="Category" type="text" maxlength="64" placeholder="Category (optional)">
+            <textarea id="createNotes" aria-label="Notes" maxlength="65536" placeholder="Notes (optional)"></textarea>
           </div>
-          <div id="createNote" class="form-stack hidden"><textarea id="createContent" maxlength="1048576" placeholder="Note content"></textarea></div>
+          <div id="createNote" class="form-stack hidden"><textarea id="createContent" aria-label="Note content" maxlength="1048576" placeholder="Note content"></textarea></div>
           <button id="createBtn" type="submit" class="btn-primary">Save Entry</button>
         </form>
       </div>
@@ -679,9 +679,9 @@ input[type="file"]::file-selector-button {
         <div class="card-title"><span><span class="icon"></span>File Upload</span></div>
         <p class="hint" style="margin-bottom:12px">Encrypt and store files in your vault. Large files are uploaded in chunks.</p>
         <form id="uploadForm" class="form-stack">
-          <input id="uploadFile" type="file" required>
-          <input id="uploadTitle" type="text" maxlength="256" placeholder="Custom title (optional)">
-          <textarea id="uploadNotes" maxlength="65536" placeholder="Notes (optional)"></textarea>
+          <input id="uploadFile" aria-label="Select file to upload" type="file" required>
+          <input id="uploadTitle" aria-label="Custom file title" type="text" maxlength="256" placeholder="Custom title (optional)">
+          <textarea id="uploadNotes" aria-label="File notes" maxlength="65536" placeholder="Notes (optional)"></textarea>
           <button id="uploadBtn" type="submit" class="btn-primary">Upload File</button>
         </form>
       </div>
@@ -691,19 +691,19 @@ input[type="file"]::file-selector-button {
         <div class="card-title"><span><span class="icon"></span>Entry Detail</span></div>
         <p id="detailHint" class="hint">Select an entry to inspect, edit, or download.</p>
         <form id="detailForm" class="form-stack hidden">
-          <input id="detailTitle" type="text" maxlength="256" required>
+          <input id="detailTitle" aria-label="Entry title" type="text" maxlength="256" required>
           <p style="display:flex;align-items:center;gap:10px">
             <span id="detailType" class="pill password">password</span>
             <span id="detailMod" class="meta-text" style="font-size:.78rem"></span>
           </p>
           <div id="detailPwd" class="form-stack">
-            <input id="detailUsername" type="text" maxlength="256" placeholder="Username">
-            <input id="detailPassword" type="text" maxlength="4096" placeholder="Password">
-            <input id="detailUrl" type="url" maxlength="2048" placeholder="URL">
-            <input id="detailCategory" type="text" maxlength="64" placeholder="Category">
-            <textarea id="detailNotes" maxlength="65536" placeholder="Notes"></textarea>
+            <input id="detailUsername" aria-label="Username" type="text" maxlength="256" placeholder="Username">
+            <input id="detailPassword" aria-label="Password" type="text" maxlength="4096" placeholder="Password">
+            <input id="detailUrl" aria-label="URL" type="url" maxlength="2048" placeholder="URL">
+            <input id="detailCategory" aria-label="Category" type="text" maxlength="64" placeholder="Category">
+            <textarea id="detailNotes" aria-label="Notes" maxlength="65536" placeholder="Notes"></textarea>
           </div>
-          <div id="detailNote" class="form-stack hidden"><textarea id="detailContent" maxlength="1048576" placeholder="Note content"></textarea></div>
+          <div id="detailNote" class="form-stack hidden"><textarea id="detailContent" aria-label="Note content" maxlength="1048576" placeholder="Note content"></textarea></div>
           <div id="detailFile" class="form-stack hidden"><p id="fileInfo" class="hint"></p></div>
           <div class="form-actions">
             <button id="saveDetail" type="submit" class="btn-primary">Save Changes</button>
@@ -719,7 +719,7 @@ input[type="file"]::file-selector-button {
         <div class="card-title"><span><span class="icon"></span>CLI Console</span></div>
         <p class="hint">Run BLANK CLI commands directly from Web UI (except launching another web UI instance).</p>
         <form id="cliForm" class="form-stack" style="margin-top:12px">
-          <input id="cliCommand" type="text" maxlength="2048" placeholder="Example: sync --status" autocomplete="off">
+          <input id="cliCommand" aria-label="CLI Command" type="text" maxlength="2048" placeholder="Example: sync --status" autocomplete="off">
           <div class="form-actions">
             <button id="runCliBtn" type="submit" class="btn-primary">Run Command</button>
             <button id="cliQuickStatus" type="button" class="btn-ghost">status</button>
