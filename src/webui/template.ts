@@ -1,4 +1,4 @@
-export function renderWebUiHtml(): string {
+export function renderWebUiHtml(nonce: string): string {
   return `<!doctype html>
 <html lang="en" data-theme="dark">
 <head>
@@ -9,7 +9,7 @@ export function renderWebUiHtml(): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <style>
+  <style nonce="${nonce}">
 :root {
   --font-sans: 'Public Sans', 'Segoe UI', sans-serif;
   --font-mono: 'IBM Plex Mono', 'Consolas', monospace;
@@ -733,7 +733,7 @@ input[type="file"]::file-selector-button {
   </div>
   <div id="toast" class="toast"></div>
 
-  <script type="module">
+  <script type="module" nonce="${nonce}">
     const DEFAULT_UPLOAD_CHUNK_BYTES=2*1024*1024;
 
     /* ── Theme ── */
