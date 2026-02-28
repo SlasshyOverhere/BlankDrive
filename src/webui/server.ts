@@ -5,7 +5,7 @@ import {
   type ServerResponse,
 } from 'node:http';
 import { execFile } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, randomBytes } from 'node:crypto';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -106,10 +106,14 @@ function sendJson(res: ServerResponse, statusCode: number, payload: unknown): vo
   res.end(JSON.stringify(payload));
 }
 
-function sendHtml(res: ServerResponse, html: string): void {
+function sendHtml(res: ServerResponse, html: string, nonce: string): void {
   res.writeHead(200, {
     'content-type': 'text/html; charset=utf-8',
     'cache-control': 'no-store',
+    'content-security-policy': `default-src 'none'; script-src 'nonce-${nonce}' 'strict-dynamic'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; img-src 'self' data:`,
+    'x-content-type-options': 'nosniff',
+    'x-frame-options': 'DENY',
+    'referrer-policy': 'no-referrer',
   });
   res.end(html);
 }
@@ -1263,7 +1267,8 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
     const requestUrl = new URL(req.url ?? '/', 'http://localhost');
 
     if (requestUrl.pathname === '/' && method === 'GET') {
-      sendHtml(res, renderWebUiHtml());
+      const nonce = randomBytes(16).toString('base64');
+      sendHtml(res, renderWebUiHtml(nonce), nonce);
       return;
     }
 
