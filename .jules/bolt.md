@@ -1,0 +1,3 @@
+## 2025-03-02 - [Optimized PNG Steganography to use direct bitwise buffer manipulations]
+**Learning:** Extracting an enormous number of arrays from payloads and images for steganography mapping causes serious memory and computational issues. I tested replacing these array manipulations by reading buffers natively using bitwise manipulations and skipping alpha channels manually (`(i & 3) === 3`) resulting in roughly a 1.7x boost to stego embedding and a ~10x boost to stego extraction.
+**Action:** Avoid copying bits from buffers into JavaScript arrays. Always parse binary and bit-level information directly from Buffers and Uint8Arrays using bitwise offsets.
