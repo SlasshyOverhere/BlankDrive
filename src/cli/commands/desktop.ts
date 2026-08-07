@@ -13,6 +13,13 @@ const GITHUB_OWNER = 'SlasshyOverhere';
 const GITHUB_REPO = 'BlankDrive';
 const GITHUB_API_HOST = 'api.github.com';
 const MAX_REDIRECTS = 5;
+const TRUSTED_DOWNLOAD_HOSTS = new Set([
+  'github.com',
+  'www.github.com',
+  'api.github.com',
+  'objects.githubusercontent.com',
+  'github-production-release-asset-2e65be.s3.amazonaws.com',
+]);
 
 interface GitHubReleaseAsset {
   name: string;
@@ -234,8 +241,13 @@ async function verifyDownloadChecksum(
 
   const digestUrl = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/download/${encodeURIComponent(tagName)}/${encodeURIComponent(assetName)}.sha256`;
 
+  const parsedDigestUrl = new URL(digestUrl);
+  if (!TRUSTED_DOWNLOAD_HOSTS.has(parsedDigestUrl.hostname.toLowerCase())) {
+    throw new Error(`untrusted checksum URL host: ${parsedDigestUrl.hostname}`);
+  }
+
   const expected = await new Promise<string>((resolve, reject) => {
-    const parsedUrl = new URL(digestUrl);
+    const parsedUrl = parsedDigestUrl;
     const request = https.get(
       {
         protocol: parsedUrl.protocol,
@@ -413,6 +425,14 @@ async function downloadWithProgress(
   }
 
   const parsedUrl = new URL(url);
+
+  // Refuse to download from any host outside GitHub's release CDN. This
+  // prevents a compromised or malicious redirect from pointing the download
+  // (and later the executed installer) at an untrusted upstream.
+  const host = parsedUrl.hostname.toLowerCase();
+  if (!TRUSTED_DOWNLOAD_HOSTS.has(host)) {
+    return Promise.reject(new Error(`untrusted URL host: ${host}`));
+  }
 
   return new Promise((resolve, reject) => {
     const request = https.get(

@@ -79,6 +79,7 @@ const noteEntry: any = { id: 'n1', title: 'Note', content: 'body\nline', favorit
 
 function response(body: unknown, statusCode = 200): any {
   const res: any = { statusCode, headers: {}, on: vi.fn((event: string, cb: (value?: Buffer) => void) => { if (event === 'data') cb(Buffer.from(typeof body === 'string' ? body : JSON.stringify(body))); if (event === 'end') cb(); return res; }), resume: vi.fn(), destroy: vi.fn() };
+  res.pipe = () => res;
   return res;
 }
 function req(): any { return { on: vi.fn(), setTimeout: vi.fn(), end: vi.fn(), destroy: vi.fn() }; }
@@ -169,7 +170,15 @@ describe('remaining CLI command error, cancellation, and empty branches', () => 
     await expect(downloadDesktopRelease({ output: '/tmp/x.exe' })).rejects.toThrow('cancelled');
     if (oldInTTY) Object.defineProperty(process.stdin, 'isTTY', oldInTTY); else delete (process.stdin as any).isTTY;
     if (oldOutTTY) Object.defineProperty(process.stdout, 'isTTY', oldOutTTY); else delete (process.stdout as any).isTTY;
-    https.request.mockImplementationOnce((_o: unknown, cb: any) => { cb(response(release)); return req(); }); await expect(downloadDesktopRelease({ install: true })).rejects.toThrow('signature verification');
+    https.request.mockImplementationOnce((_o: unknown, cb: any) => { cb(response(release)); return req(); });
+    const downloadStream = { on: vi.fn((event: string, cb: () => void) => { if (event === 'finish') setImmediate(() => cb()); return downloadStream; }), destroy: vi.fn(), write: vi.fn(() => true), end: vi.fn(), close: vi.fn((cb: () => void) => setImmediate(() => cb())) };
+    fsSync.createWriteStream.mockReturnValue(downloadStream);
+    https.get.mockImplementationOnce((_o: unknown, cb: any) => { cb(response(release)); return req(); });
+    https.get.mockImplementationOnce((_o: unknown, cb: any) => { cb(response('0'.repeat(64) + '  x.exe.sha256')); return req(); });
+    fs.readFile.mockResolvedValue(Buffer.from('data'));
+    await expect(downloadDesktopRelease({ install: true })).rejects.toThrow('signature verification');
+    fsSync.createWriteStream.mockReset();
+    https.get.mockReset();
     https.request.mockImplementationOnce((_o: unknown, cb: any) => { cb(response(release)); return req(); });
     https.get.mockImplementationOnce((_o: unknown, cb: any) => { cb({ statusCode: 302, headers: { location: 'https://evil.example/x' }, resume: vi.fn() }); return req(); }); await expect(downloadDesktopRelease({ output: '/tmp/x.exe', force: true, quiet: true })).rejects.toThrow('untrusted');
     spawn.mockReturnValueOnce({ once: vi.fn((event: string, cb: (e?: Error) => void) => event === 'error' && cb(new Error('spawn failed'))), unref: vi.fn() }); await expect(launchDesktopInstaller('/tmp/setup')).rejects.toThrow('spawn failed');
