@@ -4,6 +4,7 @@ import fs from 'fs';
 import fsPromises from 'fs/promises';
 import path from 'path';
 import os from 'os';
+import crypto from 'crypto';
 import inquirer from 'inquirer';
 import { spawn } from 'child_process';
 import { createProgressTracker, formatBytes } from '../progress.js';
@@ -216,6 +217,95 @@ export async function getDesktopReleaseInfo(tag?: string, requestedAsset?: strin
   };
 }
 
+/**
+ * Fetch a `.sha256` companion file from the release and verify the downloaded
+ * installer against it. This is the authenticity check for the .exe before it
+ * is launched.
+ */
+async function verifyDownloadChecksum(
+  tagName: string,
+  assetName: string,
+  filePath: string,
+  redirectsLeft: number,
+): Promise<void> {
+  if (redirectsLeft < 0) {
+    throw new Error('Too many redirects while fetching checksum.');
+  }
+
+  const digestUrl = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/download/${encodeURIComponent(tagName)}/${encodeURIComponent(assetName)}.sha256`;
+
+  const expected = await new Promise<string>((resolve, reject) => {
+    const parsedUrl = new URL(digestUrl);
+    const request = https.get(
+      {
+        protocol: parsedUrl.protocol,
+        hostname: parsedUrl.hostname,
+        path: `${parsedUrl.pathname}${parsedUrl.search}`,
+        headers: { 'User-Agent': 'BlankDrive-CLI', Accept: 'text/plain' },
+      },
+      (response) => {
+        const status = response.statusCode ?? 0;
+        const location = response.headers.location;
+
+        if ([301, 302, 303, 307, 308].includes(status) && location) {
+          response.resume();
+          const nextUrl = new URL(location, parsedUrl).toString();
+          const inner = new URL(nextUrl);
+          https
+            .get(
+              {
+                protocol: inner.protocol,
+                hostname: inner.hostname,
+                path: `${inner.pathname}${inner.search}`,
+                headers: { 'User-Agent': 'BlankDrive-CLI', Accept: 'text/plain' },
+              },
+              (innerResponse) => {
+                const innerStatus = innerResponse.statusCode ?? 0;
+                if (innerStatus < 200 || innerStatus >= 300) {
+                  innerResponse.resume();
+                  reject(new Error('Checksum fetch failed.'));
+                  return;
+                }
+                const chunks: Buffer[] = [];
+                innerResponse.on('data', (chunk: Buffer) => chunks.push(chunk));
+                innerResponse.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8').trim()));
+                innerResponse.on('error', reject);
+              },
+            )
+            .on('error', reject);
+          return;
+        }
+
+        if (status < 200 || status >= 300) {
+          response.resume();
+          reject(new Error('Checksum fetch failed.'));
+          return;
+        }
+
+        const chunks: Buffer[] = [];
+        response.on('data', (chunk: Buffer) => chunks.push(chunk));
+        response.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8').trim()));
+        response.on('error', reject);
+      },
+    );
+
+    request.on('error', reject);
+    request.setTimeout(15000, () => request.destroy(new Error('Checksum request timed out.')));
+  });
+
+  const digestMatch = expected.match(/^([0-9a-fA-F]{64})\b/);
+  if (!digestMatch) {
+    throw new Error('signature verification failed: no SHA-256 digest found for the installer.');
+  }
+
+  const fileBuffer = await fsPromises.readFile(filePath);
+  const actual = crypto.createHash('sha256').update(fileBuffer).digest('hex');
+  if (actual.toLowerCase() !== digestMatch[1]!.toLowerCase()) {
+    await fsPromises.unlink(filePath).catch(() => {});
+    throw new Error('signature verification failed: installer checksum does not match the published digest.');
+  }
+}
+
 function parseVersion(value: string): number[] {
   const normalized = value.trim().replace(/^v/i, '').split('-')[0] || '';
   if (!normalized) {
@@ -352,7 +442,9 @@ async function downloadWithProgress(
           return;
         }
 
-        const headerSize = Number(response.headers['content-length']);
+        const headerSizeRaw = response.headers['content-length'];
+        const hasContentLength = headerSizeRaw !== undefined;
+        const headerSize = Number(headerSizeRaw);
         const totalBytes = Number.isFinite(headerSize) && headerSize > 0
           ? headerSize
           : Math.max(fallbackSize, 1);
@@ -400,10 +492,12 @@ async function downloadWithProgress(
             progress.finish();
           }
 
-          // Integrity check: the downloaded byte count must match the declared
-          // content-length / asset size. Reject truncated or tampered downloads
-          // before the file is ever handed to the installer.
-          if (downloaded !== totalBytes) {
+          // Integrity check: when the server declares a content-length, the
+          // downloaded byte count must match it exactly. Reject truncated
+          // downloads before the file is handed to the installer. (When no
+          // content-length is present, authenticity is enforced by the SHA-256
+          // checksum verification that follows.)
+          if (hasContentLength && downloaded !== totalBytes) {
             stream.close(() => {});
             fsPromises.unlink(outputPath).catch(() => {});
             reject(new Error(
@@ -442,7 +536,10 @@ export async function downloadDesktopRelease(options: DesktopCommandOptions = {}
   const quiet = options.quiet === true;
   const nonInteractive = options.nonInteractive === true;
 
-  const allowOverwrite = await ensureOverwriteAllowed(outputPath, options.force === true, nonInteractive);
+  // An explicit install (or --force) must not be blocked by an interactive
+  // overwrite prompt.
+  const forceOverwrite = options.force === true || options.install === true;
+  const allowOverwrite = await ensureOverwriteAllowed(outputPath, forceOverwrite, nonInteractive);
   if (!allowOverwrite) {
     throw new Error('Download cancelled by user.');
   }
@@ -465,6 +562,8 @@ export async function downloadDesktopRelease(options: DesktopCommandOptions = {}
     MAX_REDIRECTS,
     !quiet
   );
+
+  await verifyDownloadChecksum(info.tagName, info.assetName, outputPath, MAX_REDIRECTS);
 
   return {
     releaseTag: info.tagName,

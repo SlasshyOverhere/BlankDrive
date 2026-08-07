@@ -282,7 +282,9 @@ describe('direct CLI command coverage', () => {
     expect(isNewerVersion('v1.2.0', '1.1.9')).toBe(true);
     expect(isNewerVersion('1.2.0', 'v1.2.0')).toBe(false);
 
-    const response = { statusCode: 200, headers: {}, on: (event: string, cb: (chunk?: Buffer) => void) => { if (event === 'data') cb(Buffer.from(JSON.stringify({ tag_name: 'v1.0.0', assets: [{ name: 'BlankDrive-x64.exe', size: 3, browser_download_url: 'https://github.com/SlasshyOverhere/BlankDrive/releases/download/v1.0.0/BlankDrive-x64.exe' }] }))); if (event === 'end') cb(); return response; } };
+    const releaseBody = JSON.stringify({ tag_name: 'v1.0.0', assets: [{ name: 'BlankDrive-x64.exe', size: 3, browser_download_url: 'https://github.com/SlasshyOverhere/BlankDrive/releases/download/v1.0.0/BlankDrive-x64.exe' }] });
+    const response = { statusCode: 200, headers: {}, on: (event: string, cb: (chunk?: Buffer) => void) => { if (event === 'data') cb(Buffer.from(releaseBody)); if (event === 'end') cb(); return response; } };
+    const checksumResponse = { statusCode: 200, headers: {}, on: (event: string, cb: (chunk?: Buffer) => void) => { if (event === 'data') cb(Buffer.from('0'.repeat(64) + '  BlankDrive-x64.exe.sha256')); if (event === 'end') cb(); return checksumResponse; } };
     const requestWithRelease = () => ({ on: vi.fn(), setTimeout: vi.fn(), end: vi.fn() });
     httpsMock.request
       .mockImplementationOnce((_options: unknown, cb: (res: unknown) => void) => { cb(response); return requestWithRelease(); })
@@ -294,8 +296,27 @@ describe('direct CLI command coverage', () => {
     Object.defineProperty(process.stdin, 'isTTY', { configurable: true, value: true });
     Object.defineProperty(process.stdout, 'isTTY', { configurable: true, value: true });
     await expect(downloadDesktopRelease({ output: '/tmp/app.exe' })).rejects.toThrow('cancelled');
-    httpsMock.request.mockImplementationOnce((_options: unknown, cb: (res: unknown) => void) => { cb(response); return requestWithRelease(); });
+    // download (release body on https.get), then checksum fetch (https.get)
+    // returns a bogus digest, so the installed file fails signature verification.
+    const downloadStream = {
+      on: vi.fn((evt: string, cb: () => void) => { if (evt === 'finish') setImmediate(() => cb()); return downloadStream; }),
+      destroy: vi.fn(), write: vi.fn(() => true), end: vi.fn(),
+      close: vi.fn((cb: () => void) => setImmediate(() => cb())),
+    };
+    fsMock.createWriteStream.mockReturnValue(downloadStream);
+    (response as unknown as { pipe: unknown }).pipe = () => downloadStream;
+    const downloadReq = { on: vi.fn(), setTimeout: vi.fn(), end: vi.fn(), destroy: vi.fn() };
+    const checksumReq = { on: vi.fn(), setTimeout: vi.fn(), end: vi.fn(), destroy: vi.fn() };
+    httpsMock.get
+      .mockImplementationOnce((_options: unknown, cb: (res: unknown) => void) => { cb(response); return downloadReq; })
+      .mockImplementationOnce((_options: unknown, cb: (res: unknown) => void) => { cb(checksumResponse); return checksumReq; });
+    fsPromises.readFile.mockResolvedValue(Buffer.from(releaseBody));
+    httpsMock.request
+      .mockImplementationOnce((_options: unknown, cb: (res: unknown) => void) => { cb(response); return requestWithRelease(); });
     await expect(downloadDesktopRelease({ quiet: true, install: true })).rejects.toThrow('signature verification');
+    fsPromises.readFile.mockRejectedValue(new Error('missing'));
+    fsMock.createWriteStream.mockReset();
+    httpsMock.get.mockReset();
   });
 
   it('covers destruct confirmation cancellation and cloud protection', async () => {
