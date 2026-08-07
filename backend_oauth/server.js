@@ -385,7 +385,7 @@ export function createApp(env, { oauth2Client, fetch } = {}) {
 
 export function startServer(env, options) {
   const app = createApp(env, options);
-  const host = env.OAUTH_HOST || '127.0.0.1';
+  const host = env.OAUTH_HOST || '0.0.0.0';
   const port = env.PORT !== undefined && env.PORT !== '' ? parseInt(env.PORT, 10) : 3410;
 
   const server = app.listen(port, host, () => {
