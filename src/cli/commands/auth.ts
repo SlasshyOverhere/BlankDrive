@@ -138,7 +138,7 @@ async function authenticateGoogleDrive(forceSetup: boolean = false): Promise<voi
   }
 
   // When using backend OAuth service, skip credential prompts
-  const usingBackend = !!process.env.BLANKDRIVE_OAUTH_BACKEND_URL || true; // Default to backend mode
+  const usingBackend = !!process.env.BLANKDRIVE_OAUTH_BACKEND_URL; // Default to backend mode
 
   if (!usingBackend || forceSetup) {
     // Only prompt for credentials if NOT using backend OR user explicitly requested setup

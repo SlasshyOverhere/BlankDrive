@@ -4,12 +4,10 @@ import {
   type Server,
   type ServerResponse,
 } from 'node:http';
-import { execFile } from 'node:child_process';
 import { randomBytes, randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { promisify } from 'node:util';
 import {
   addFileEntry,
   addEntry,
@@ -20,6 +18,7 @@ import {
   getFileEntry,
   getNoteEntry,
   getStats,
+  getVault2FAConfig,
   getVaultIndex,
   getVaultPaths,
   initVault,
@@ -30,13 +29,16 @@ import {
   unlock,
   updateEntry,
   updateNoteEntry,
+  useBackupCode,
   vaultExists,
 } from '../storage/vault/index.js';
 import {
+  deleteFileFromCloud,
   downloadFileFromCloud,
   isCloudSyncAvailable,
   type CloudFileChunk,
 } from '../storage/drive/index.js';
+import { verifyBackupCode, verifyVault2FACode } from '../cli/vault2fa.js';
 import { renderWebUiHtml } from './template.js';
 
 const DEFAULT_HOST = 'localhost';
@@ -45,9 +47,6 @@ const MAX_JSON_REQUEST_BYTES = 1_000_000;
 const MIN_UPLOAD_CHUNK_BYTES = 256 * 1024;
 const MAX_UPLOAD_CHUNK_BYTES = 4 * 1024 * 1024;
 const MAX_UPLOAD_SESSION_AGE_MS = 60 * 60 * 1000;
-const CLI_RUN_TIMEOUT_MS = 120_000;
-const CLI_RUN_MAX_BUFFER_BYTES = 10 * 1024 * 1024;
-const BLOCKED_WEB_CLI_COMMANDS = new Set(['web', 'ui', 'destruct', 'init', 'auth', 'delete']);
 
 // File upload security: Allowed file types and max size
 const ALLOWED_FILE_EXTENSIONS = new Set([
@@ -67,6 +66,17 @@ const ALLOWED_FILE_EXTENSIONS = new Set([
 ]);
 
 const MAX_FILE_SIZE_BYTES = 100 * 1024 * 1024; // 100 MB
+const MAX_ACTIVE_UPLOAD_SESSIONS = 8;
+const BLOCKED_INLINE_MIME_TYPES = new Set([
+  'text/html',
+  'application/xhtml+xml',
+  'image/svg+xml',
+  'text/xml',
+  'application/xml',
+  'application/javascript',
+  'text/javascript',
+  'application/json',
+]);
 
 const BRAND_LOGO_CANDIDATES = [
   path.join(process.cwd(), 'assets', 'blankdrive-logo.png'),
@@ -74,7 +84,6 @@ const BRAND_LOGO_CANDIDATES = [
   path.join(process.cwd(), 'desktop-application', 'src-tauri', 'icons', 'icon.png'),
 ];
 
-const execFileAsync = promisify(execFile);
 
 type JsonBody = Record<string, unknown>;
 
@@ -91,15 +100,6 @@ interface UploadSession {
   receivedBytes: number;
   nextChunkIndex: number;
   updatedAt: number;
-}
-
-interface CliRunResult {
-  command: string;
-  args: string[];
-  stdout: string;
-  stderr: string;
-  exitCode: number | null;
-  timedOut: boolean;
 }
 
 const uploadSessions = new Map<string, UploadSession>();
@@ -257,10 +257,12 @@ function isInvalidUnlockError(error: unknown): boolean {
 export interface WebUiServerOptions {
   host?: string;
   port?: number;
+  capability?: string;
 }
 
 export interface WebUiServerHandle {
   url: string;
+  capability: string;
   close: () => Promise<void>;
 }
 
@@ -350,9 +352,9 @@ function requireLocalhostRequest(req: IncomingMessage): void {
   }
 }
 
-function requireUiWriteGuard(req: IncomingMessage): void {
+function requireUiCapability(req: IncomingMessage, capability: string): void {
   const value = headerValue(req.headers['x-blankdrive-ui']);
-  if (value !== '1') {
+  if (!value || !capability || value !== capability) {
     throw new HttpError(403, 'Forbidden request.');
   }
 }
@@ -452,6 +454,15 @@ function ensureValidUrl(value: string | undefined, key: string): void {
   }
 }
 
+/**
+ * MIME types that contain active content and must never be streamed inline
+ * from the vault origin. These are always forced to download.
+ */
+function isActiveContentMimeType(mimeType: string): boolean {
+  const normalized = mimeType.toLowerCase().split(';')[0]!.trim();
+  return BLOCKED_INLINE_MIME_TYPES.has(normalized);
+}
+
 async function readJsonBody(req: IncomingMessage, maxBytes = MAX_JSON_REQUEST_BYTES): Promise<JsonBody> {
   if (!req.method || req.method === 'GET' || req.method === 'HEAD') {
     return {};
@@ -538,173 +549,6 @@ async function cleanupExpiredUploadSessions(): Promise<void> {
   }
 
   await Promise.all(expiredIds.map((uploadId) => cleanupUploadSession(uploadId)));
-}
-
-/**
- * Secure CLI command parser that prevents injection attacks
- * Uses strict validation and sanitization
- */
-function parseCliCommandLine(input: string): string[] {
-  // Reject dangerous characters that could enable injection
-  const dangerousPatterns = /[;&|`$(){}[\]!#~]/;
-  if (dangerousPatterns.test(input)) {
-    throw new HttpError(400, 'Command contains invalid characters.');
-  }
-
-  const args: string[] = [];
-  let current = '';
-  let quote: '"' | '\'' | null = null;
-  let i = 0;
-
-  while (i < input.length) {
-    const ch = input[i]!;
-
-    // Handle escape sequences
-    if (ch === '\\') {
-      const next = input[i + 1];
-      if (next !== undefined && (next === '"' || next === '\'' || next === '\\' || next === ' ')) {
-        current += next;
-        i += 2;
-        continue;
-      }
-      current += ch;
-      i++;
-      continue;
-    }
-
-    // Handle quotes
-    if (quote) {
-      if (ch === quote) {
-        quote = null;
-      } else {
-        current += ch;
-      }
-      i++;
-      continue;
-    }
-
-    if (ch === '"' || ch === '\'') {
-      quote = ch;
-      i++;
-      continue;
-    }
-
-    // Handle whitespace
-    if (/\s/.test(ch)) {
-      if (current.length > 0) {
-        args.push(current);
-        current = '';
-      }
-      i++;
-      continue;
-    }
-
-    current += ch;
-    i++;
-  }
-
-  if (quote) {
-    throw new HttpError(400, 'Unclosed quote in command.');
-  }
-
-  if (current.length > 0) {
-    args.push(current);
-  }
-
-  // Validate command is not empty
-  if (args.length === 0) {
-    throw new HttpError(400, 'Empty command.');
-  }
-
-  // Blocklist check on the first argument (the command)
-  const command = args[0]!.toLowerCase();
-  const blockedCommands = ['rm', 'del', 'rmdir', 'mkfs', 'format', 'shutdown', 'reboot'];
-  if (blockedCommands.includes(command)) {
-    throw new HttpError(400, `Command "${command}" is not allowed.`);
-  }
-
-  return args;
-}
-
-async function resolveCliEntrypoint(): Promise<string> {
-  const cliPath = path.join(process.cwd(), 'dist', 'index.js');
-  try {
-    await fs.access(cliPath);
-    return cliPath;
-  } catch {
-    throw new HttpError(500, 'CLI runtime not found. Run "npm run build" and restart web UI.');
-  }
-}
-
-function normalizeExecText(value: unknown): string {
-  if (typeof value === 'string') {
-    return value;
-  }
-  if (Buffer.isBuffer(value)) {
-    return value.toString('utf-8');
-  }
-  return '';
-}
-
-async function runCliCommand(commandLine: string): Promise<CliRunResult> {
-  const args = parseCliCommandLine(commandLine.trim());
-  if (args.length === 0) {
-    throw new HttpError(400, 'Command is required.');
-  }
-
-  const command = args[0]!.toLowerCase();
-  if (BLOCKED_WEB_CLI_COMMANDS.has(command)) {
-    throw new HttpError(400, `Command "${command}" is not allowed inside Web UI.`);
-  }
-
-  const cliEntrypoint = await resolveCliEntrypoint();
-
-  try {
-    const result = await execFileAsync(
-      process.execPath,
-      [cliEntrypoint, ...args],
-      {
-        cwd: process.cwd(),
-        timeout: CLI_RUN_TIMEOUT_MS,
-        maxBuffer: CLI_RUN_MAX_BUFFER_BYTES,
-        windowsHide: true,
-      },
-    );
-
-    return {
-      command,
-      args: args.slice(1),
-      stdout: normalizeExecText(result.stdout),
-      stderr: normalizeExecText(result.stderr),
-      exitCode: 0,
-      timedOut: false,
-    };
-  } catch (error) {
-    const execError = error as {
-      stdout?: string | Buffer;
-      stderr?: string | Buffer;
-      code?: number | string;
-      signal?: string | null;
-      message?: string;
-      killed?: boolean;
-    };
-
-    const timedOut = execError.signal === 'SIGTERM'
-      && typeof execError.message === 'string'
-      && execError.message.toLowerCase().includes('timed out');
-    const fallbackMessage = execError.message || 'Command failed.';
-    const stderr = normalizeExecText(execError.stderr) || fallbackMessage;
-    const exitCode = typeof execError.code === 'number' ? execError.code : (timedOut ? null : 1);
-
-    return {
-      command,
-      args: args.slice(1),
-      stdout: normalizeExecText(execError.stdout),
-      stderr,
-      exitCode,
-      timedOut,
-    };
-  }
 }
 
 function ensureUnlocked(): void {
@@ -971,12 +815,16 @@ async function handleApiRequest(
   res: ServerResponse,
   requestUrl: URL,
   unlockRateLimiter: UnlockRateLimiter,
+  capability: string,
 ): Promise<void> {
   const method = req.method ?? 'GET';
   const pathname = requestUrl.pathname;
 
-  if (isWriteMethod(method)) {
-    requireUiWriteGuard(req);
+  // Every /api endpoint is gated on the per-instance capability, except the
+  // brand logo which is static. This prevents cross-site requests and page
+  // hijacking from reading or writing vault data.
+  if (pathname !== '/api/brand/logo') {
+    requireUiCapability(req, capability);
   }
 
   if (pathname === '/api/brand/logo') {
@@ -1069,11 +917,6 @@ async function handleApiRequest(
 
     try {
       await unlock(password!);
-      unlockRateLimiter.reset(unlockKey);
-      sendJson(res, 200, {
-        unlocked: true,
-        stats: getStats(),
-      });
     } catch (error) {
       if (isInvalidUnlockError(error)) {
         unlockRateLimiter.recordFailure(unlockKey);
@@ -1081,6 +924,49 @@ async function handleApiRequest(
       }
       throw new HttpError(500, 'Internal Server Error');
     }
+
+    // Enforce vault 2FA (TOTP or backup code) the same way the CLI does.
+    const twoFaConfig = getVault2FAConfig();
+    if (twoFaConfig?.enabled) {
+      const rawCode = readString(body, 'code', {
+        required: true,
+        maxLength: 64,
+        trim: false,
+        allowEmpty: false,
+      });
+      if (!rawCode) {
+        lock();
+        throw new HttpError(401, 'Two-factor authentication code is required.');
+      }
+
+      const normalized = rawCode.replace(/\s/g, '').toUpperCase();
+      const isBackupCode = /^[A-Z0-9]{4}-?[A-Z0-9]{4}$/.test(normalized);
+      let authenticated = false;
+
+      if (isBackupCode) {
+        const backupIndex = verifyBackupCode(normalized, twoFaConfig.backupCodes ?? []);
+        if (backupIndex >= 0) {
+          await useBackupCode(backupIndex);
+          authenticated = true;
+        }
+      } else {
+        // verifyVault2FACode strips spaces itself, but the web UI contract
+        // normalizes the code before verification.
+        authenticated = verifyVault2FACode(normalized, twoFaConfig.secret);
+      }
+
+      if (!authenticated) {
+        lock();
+        unlockRateLimiter.recordFailure(unlockKey);
+        throw new HttpError(401, 'Invalid two-factor authentication code.');
+      }
+    }
+
+    unlockRateLimiter.reset(unlockKey);
+    sendJson(res, 200, {
+      unlocked: true,
+      stats: getStats(),
+    });
     return;
   }
 
@@ -1202,6 +1088,10 @@ async function handleApiRequest(
     ensureUnlocked();
     await cleanupExpiredUploadSessions();
 
+    if (uploadSessions.size >= MAX_ACTIVE_UPLOAD_SESSIONS) {
+      throw new HttpError(429, 'Too many active upload sessions. Abort or complete existing uploads.');
+    }
+
     const body = await readJsonBody(req);
     const fileName = readString(body, 'fileName', {
       required: true,
@@ -1224,7 +1114,7 @@ async function handleApiRequest(
     const totalSize = readInteger(body, 'totalSize', {
       required: true,
       min: 0,
-      max: Number.MAX_SAFE_INTEGER,
+      max: MAX_FILE_SIZE_BYTES,
     })!;
     const requestedChunkSize = readInteger(body, 'chunkSize', {
       required: false,
@@ -1391,19 +1281,10 @@ async function handleApiRequest(
       return;
     }
 
-    ensureUnlocked();
-
-    const body = await readJsonBody(req);
-    const command = readString(body, 'command', {
-      required: true,
-      maxLength: 2048,
-      trim: true,
-      allowEmpty: false,
-    })!;
-    const result = await runCliCommand(command);
-
-    sendJson(res, 200, result);
-    return;
+    // Running arbitrary CLI commands from the web UI is intentionally disabled.
+    // The web UI is a read/write surface for the vault and must not double as a
+    // command executor that could be reached by uploaded active content.
+    throw new HttpError(410, 'CLI command execution from the web UI is disabled.');
   }
 
   const fileDownloadRoute = parseFileDownloadRoute(pathname);
@@ -1440,6 +1321,12 @@ async function handleApiRequest(
     const { fileEntry, fileData } = await resolveFileDataFromVaultOrCloud(id);
     const totalSize = fileData.byteLength;
     const downloadName = normalizeDownloadFileName(fileEntry.originalName);
+    const originalMimeType = fileEntry.mimeType || 'application/octet-stream';
+    const isActiveContent = isActiveContentMimeType(originalMimeType);
+    // Active content (HTML/SVG/JS/XML) is forced to application/octet-stream
+    // and to download so it can never render or execute with the vault origin.
+    const mimeType = isActiveContent ? 'application/octet-stream' : originalMimeType;
+    const disposition = isActiveContent ? 'attachment' : 'inline';
     const rangeHeader = headerValue(req.headers.range);
     const range = parseByteRange(rangeHeader, totalSize);
 
@@ -1447,23 +1334,25 @@ async function handleApiRequest(
       const { start, end } = range;
       const chunk = fileData.subarray(start, end + 1);
       res.writeHead(206, {
-        'content-type': fileEntry.mimeType || 'application/octet-stream',
+        'content-type': mimeType,
         'content-length': String(chunk.byteLength),
         'content-range': `bytes ${start}-${end}/${totalSize}`,
         'accept-ranges': 'bytes',
-        'content-disposition': `inline; filename="${downloadName}"`,
+        'content-disposition': `${disposition}; filename="${downloadName}"`,
         'cache-control': 'no-store',
+        ...(isActiveContent ? { 'x-content-type-options': 'nosniff' } : {}),
       });
       res.end(chunk);
       return;
     }
 
     res.writeHead(200, {
-      'content-type': fileEntry.mimeType || 'application/octet-stream',
+      'content-type': mimeType,
       'content-length': String(totalSize),
       'accept-ranges': 'bytes',
-      'content-disposition': `inline; filename="${downloadName}"`,
+      'content-disposition': `${disposition}; filename="${downloadName}"`,
       'cache-control': 'no-store',
+      ...(isActiveContent ? { 'x-content-type-options': 'nosniff' } : {}),
     });
     res.end(fileData);
     return;
@@ -1496,6 +1385,21 @@ async function handleApiRequest(
     }
 
     if (method === 'DELETE') {
+      // For file entries backed by cloud chunks, delete the cloud copy first.
+      // If cloud deletion fails, refuse to delete locally so the cloud copy is
+      // not orphaned with no local metadata.
+      if (entryType === 'file') {
+        const indexEntry = getVaultIndex()?.entries[id];
+        const cloudChunks = (indexEntry?.cloudChunks as CloudFileChunk[] | undefined) ?? [];
+        if (cloudChunks.length > 0) {
+          try {
+            await deleteFileFromCloud(id, cloudChunks);
+          } catch {
+            throw new HttpError(409, 'Failed to delete file from cloud. Local delete aborted.');
+          }
+        }
+      }
+
       const deleted = await deleteEntry(id);
       if (!deleted) {
         sendJson(res, 404, { error: 'Entry not found.' });
@@ -1646,6 +1550,7 @@ async function requestHandler(
   req: IncomingMessage,
   res: ServerResponse,
   unlockRateLimiter: UnlockRateLimiter,
+  capability: string,
 ): Promise<void> {
   try {
     const method = req.method ?? 'GET';
@@ -1654,7 +1559,7 @@ async function requestHandler(
 
     if (requestUrl.pathname === '/' && method === 'GET') {
       const nonce = randomBytes(16).toString('base64');
-      sendHtml(res, renderWebUiHtml(nonce), nonce);
+      sendHtml(res, renderWebUiHtml(nonce, capability), nonce);
       return;
     }
 
@@ -1677,7 +1582,7 @@ async function requestHandler(
     }
 
     if (requestUrl.pathname.startsWith('/api/')) {
-      await handleApiRequest(req, res, requestUrl, unlockRateLimiter);
+      await handleApiRequest(req, res, requestUrl, unlockRateLimiter, capability);
       return;
     }
 
@@ -1708,6 +1613,11 @@ function closeServer(server: Server): Promise<void> {
       }
       resolve();
     });
+    // Force-close any remaining sockets (e.g. undici keep-alive connections
+    // whose response bodies were never consumed) so shutdown never hangs.
+    if (typeof server.closeAllConnections === 'function') {
+      server.closeAllConnections();
+    }
   });
 }
 
@@ -1738,9 +1648,10 @@ export async function startWebUiServer(options: WebUiServerOptions = {}): Promis
   }
   const host = DEFAULT_HOST;
   const port = options.port ?? DEFAULT_PORT;
+  const capability = options.capability?.trim() || randomBytes(32).toString('hex');
   const unlockRateLimiter = createUnlockRateLimiter();
   const server = createServer((req, res) => {
-    void requestHandler(req, res, unlockRateLimiter);
+    void requestHandler(req, res, unlockRateLimiter, capability);
   });
 
   await new Promise<void>((resolve, reject) => {
@@ -1766,6 +1677,7 @@ export async function startWebUiServer(options: WebUiServerOptions = {}): Promis
 
   return {
     url: `http://${host}:${address.port}`,
+    capability,
     close: async (): Promise<void> => closeServer(server),
   };
 }

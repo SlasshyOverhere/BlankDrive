@@ -239,7 +239,7 @@ export async function ensureAuthenticated(): Promise<boolean> {
   }
 
   // Step 4: Skip OAuth credential check when using backend service
-  const usingBackend = !!process.env.BLANKDRIVE_OAUTH_BACKEND_URL || true; // Default to backend mode
+  const usingBackend = !!process.env.BLANKDRIVE_OAUTH_BACKEND_URL; // Default to backend mode
   if (!usingBackend) {
     // Only check credentials if NOT using backend
     if (!await isGoogleOAuthConfigured()) {

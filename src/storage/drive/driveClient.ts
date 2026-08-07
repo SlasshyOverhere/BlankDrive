@@ -8,6 +8,7 @@ import chalk from 'chalk';
 import { google, drive_v3 } from 'googleapis';
 import { OAuth2Client, Credentials, CodeChallengeMethod } from 'google-auth-library';
 import { encryptToPayload, decryptToString, getMetadataKey } from '../../crypto/index.js';
+import { assertSecureServerUrl } from '../../security/urlValidation.js';
 // Backend OAuth API response types
 interface GenerateAuthUrlResponse {
   authUrl: string;
@@ -660,7 +661,10 @@ export async function performOAuthFlow(
   }
 ): Promise<void> {
   // Use backend OAuth service if available
-  const backendUrl = process.env.BLANKDRIVE_OAUTH_BACKEND_URL || 'http://localhost:3410';
+  const backendUrl = assertSecureServerUrl(
+    process.env.BLANKDRIVE_OAUTH_BACKEND_URL || 'http://localhost:3410',
+    'OAuth backend URL',
+  ).toString().replace(/\/$/, '');
 
   try {
     // Step 1: Generate PKCE parameters locally (frontend generates verifier)

@@ -1,4 +1,9 @@
-export function renderWebUiHtml(nonce: string): string {
+function jsonEscape(value: string): string {
+  return JSON.stringify(value).replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
+}
+
+export function renderWebUiHtml(nonce: string, capability: string): string {
+  const uiCapabilityLiteral = jsonEscape(capability);
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -771,6 +776,7 @@ input[type="file"]::file-selector-button {
         </form>
         <form id="unlockForm">
           <input id="unlockPassword" type="password" autocomplete="current-password" placeholder="Master password *" aria-label="Master password" required style="max-width:260px">
+          <input id="unlockCode" type="text" autocomplete="one-time-code" inputmode="numeric" placeholder="2FA code (if enabled)" aria-label="Two-factor authentication code" style="max-width:260px">
           <button type="submit" class="btn-primary btn-sm">Unlock</button>
         </form>
         <button id="lockButton" type="button" class="btn-ghost btn-sm">Lock</button>
@@ -861,20 +867,10 @@ input[type="file"]::file-selector-button {
           </form>
         </section>
 
-        <!-- CLI CONSOLE -->
+        <!-- CLI CONSOLE (disabled: the web UI must not execute arbitrary CLI commands) -->
         <section class="card cli-panel">
           <div class="card-title"><span><span class="icon"></span>CLI Console</span></div>
-          <p class="hint">Run BLANK CLI commands directly from Web UI (except launching another web UI instance).</p>
-          <form id="cliForm" class="form-stack" style="margin-top:12px">
-            <input id="cliCommand" type="text" maxlength="2048" placeholder="Example: sync --status" autocomplete="off" aria-label="CLI command">
-            <div class="form-actions">
-              <button id="runCliBtn" type="submit" class="btn-primary">Run Command</button>
-              <button id="cliQuickStatus" type="button" class="btn-ghost">status</button>
-              <button id="cliQuickSync" type="button" class="btn-ghost">sync --status</button>
-              <button id="cliQuickSettings" type="button" class="btn-ghost">settings</button>
-            </div>
-          </form>
-          <pre id="cliOutput" class="hint cli-output">CLI output will appear here.</pre>
+          <p class="hint">Command execution from the Web UI is disabled for security. Use the BLANK CLI in your terminal for vault and sync operations.</p>
         </section>
       </div>
     </section>
@@ -951,13 +947,6 @@ input[type="file"]::file-selector-button {
       watchVideo:document.getElementById('watchVideo'),
       toggleFav:document.getElementById('toggleFav'),
       deleteEntry:document.getElementById('deleteEntry'),
-      cliForm:document.getElementById('cliForm'),
-      cliCommand:document.getElementById('cliCommand'),
-      runCliBtn:document.getElementById('runCliBtn'),
-      cliQuickStatus:document.getElementById('cliQuickStatus'),
-      cliQuickSync:document.getElementById('cliQuickSync'),
-      cliQuickSettings:document.getElementById('cliQuickSettings'),
-      cliOutput:document.getElementById('cliOutput'),
       toast:document.getElementById('toast'),
       videoModal:document.getElementById('videoModal'),
       videoTitle:document.getElementById('videoTitle'),
@@ -979,7 +968,8 @@ input[type="file"]::file-selector-button {
     function entryFilters(){return {query:String(el.search.value||'').trim(),type:String(el.typeFilter.value||'all')}}
     function queryUrl(filters){const p=new URLSearchParams();if(filters.query)p.set('query',filters.query);if(filters.type!=='all')p.set('type',filters.type);const qs=p.toString();return qs?'/api/entries?'+qs:'/api/entries'}
 
-    async function api(path,opt){const o=opt?Object.assign({},opt):{};const m=String(o.method||'GET').toUpperCase();const h=new Headers(o.headers||{});if(m!=='GET')h.set('X-BlankDrive-UI','1');if(o.body!==undefined&&typeof o.body!=='string'){h.set('Content-Type','application/json');o.body=JSON.stringify(o.body)}o.method=m;o.headers=h;const r=await fetch(path,o);const ct=r.headers.get('content-type')||'';const d=ct.includes('application/json')?await r.json():await r.text();if(!r.ok){const msg=d&&typeof d==='object'&&d.error?d.error:'Request failed ('+r.status+')';throw new Error(msg)}return d}
+    const UI_CAPABILITY=${uiCapabilityLiteral};
+    async function api(path,opt){const o=opt?Object.assign({},opt):{};const m=String(o.method||'GET').toUpperCase();const h=new Headers(o.headers||{});h.set('X-BlankDrive-UI',UI_CAPABILITY);if(o.body!==undefined&&typeof o.body!=='string'){h.set('Content-Type','application/json');o.body=JSON.stringify(o.body)}o.method=m;o.headers=h;const r=await fetch(path,o);const ct=r.headers.get('content-type')||'';const d=ct.includes('application/json')?await r.json():await r.text();if(!r.ok){const msg=d&&typeof d==='object'&&d.error?d.error:'Request failed ('+r.status+')';throw new Error(msg)}return d}
 
     function setUnlocked(enabled){
       const lockMsg='Vault is locked';
@@ -1059,22 +1049,19 @@ input[type="file"]::file-selector-button {
     function parseDownloadName(disposition,fallback){if(!disposition)return fallback;const utf=disposition.match(/filename\\*=UTF-8''([^;]+)/i);if(utf&&utf[1]){try{return decodeURIComponent(utf[1])}catch{return fallback}}const basic=disposition.match(/filename="([^"]+)"/i);if(basic&&basic[1])return basic[1];return fallback}
     async function readFetchError(r,fallback){const ct=r.headers.get('content-type')||'';if(ct.includes('application/json')){try{const payload=await r.json();if(payload&&payload.error)return payload.error}catch{}}try{const txt=await r.text();if(txt&&txt.trim())return txt.trim()}catch{}return fallback+' ('+r.status+')'}
     function formatBytes(bytes){if(bytes<1024)return bytes+' B';if(bytes<1024*1024)return(Math.round((bytes/1024)*10)/10)+' KB';if(bytes<1024*1024*1024)return(Math.round((bytes/(1024*1024))*10)/10)+' MB';return(Math.round((bytes/(1024*1024*1024))*100)/100)+' GB'}
-    function setCliOutput(text){el.cliOutput.textContent=text&&text.trim()?text.trim():'(no output)'}
-    async function uploadInChunks(file,title,notes){const init=await api('/api/files/upload/start',{method:'POST',body:{fileName:file.name,title,notes,totalSize:file.size,chunkSize:DEFAULT_UPLOAD_CHUNK_BYTES}});const uploadId=String(init&&init.uploadId||'');if(!uploadId)throw new Error('Failed to initialize upload.');const chunkSize=Number(init&&init.chunkSize)||DEFAULT_UPLOAD_CHUNK_BYTES;const totalChunks=Number(init&&init.totalChunks)||0;let uploadedBytes=0;try{for(let i=0;i<totalChunks;i++){const start=i*chunkSize;const end=Math.min(start+chunkSize,file.size);const chunk=file.slice(start,end);const r=await fetch('/api/files/upload/chunk?uploadId='+encodeURIComponent(uploadId)+'&index='+i,{method:'POST',headers:{'X-BlankDrive-UI':'1','Content-Type':'application/octet-stream'},body:chunk});if(!r.ok)throw new Error(await readFetchError(r,'Upload chunk failed'));uploadedBytes=end;const pct=file.size>0?Math.floor((uploadedBytes/file.size)*100):100;busy(el.uploadBtn,true,'Uploading '+pct+'%…','Upload File')}const complete=await api('/api/files/upload/complete',{method:'POST',body:{uploadId}});return complete}catch(error){await api('/api/files/upload/abort',{method:'POST',body:{uploadId}}).catch(()=>{});throw error}}
-    async function runCliCommandFromUi(command){const trimmed=String(command||'').trim();if(!trimmed){showToast('Enter a command first.');return}busy(el.runCliBtn,true,'Running…','Run Command');try{const result=await api('/api/cli/run',{method:'POST',body:{command:trimmed}});const out=[];out.push('$ BLANK '+trimmed);if(result&&result.stdout)out.push(String(result.stdout));if(result&&result.stderr)out.push(String(result.stderr));out.push('exitCode: '+String(result&&result.exitCode!==undefined?result.exitCode:'unknown'));if(result&&result.timedOut)out.push('timedOut: true');setCliOutput(out.join('\\n\\n'));showToast(result&&result.exitCode===0?'Command completed.':'Command finished with errors.');await refreshStatus(true);if(s.selectedId)await loadEntry(s.selectedId)}catch(err){setCliOutput(err instanceof Error?err.message:'Command failed.');showToast(err instanceof Error?err.message:'Command failed.')}finally{busy(el.runCliBtn,false,'Running…','Run Command')}}
+    async function uploadInChunks(file,title,notes){const init=await api('/api/files/upload/start',{method:'POST',body:{fileName:file.name,title,notes,totalSize:file.size,chunkSize:DEFAULT_UPLOAD_CHUNK_BYTES}});const uploadId=String(init&&init.uploadId||'');if(!uploadId)throw new Error('Failed to initialize upload.');const chunkSize=Number(init&&init.chunkSize)||DEFAULT_UPLOAD_CHUNK_BYTES;const totalChunks=Number(init&&init.totalChunks)||0;let uploadedBytes=0;try{for(let i=0;i<totalChunks;i++){const start=i*chunkSize;const end=Math.min(start+chunkSize,file.size);const chunk=file.slice(start,end);const r=await fetch('/api/files/upload/chunk?uploadId='+encodeURIComponent(uploadId)+'&index='+i,{method:'POST',headers:{'X-BlankDrive-UI':UI_CAPABILITY,'Content-Type':'application/octet-stream'},body:chunk});if(!r.ok)throw new Error(await readFetchError(r,'Upload chunk failed'));uploadedBytes=end;const pct=file.size>0?Math.floor((uploadedBytes/file.size)*100):100;busy(el.uploadBtn,true,'Uploading '+pct+'%…','Upload File')}const complete=await api('/api/files/upload/complete',{method:'POST',body:{uploadId}});return complete}catch(error){await api('/api/files/upload/abort',{method:'POST',body:{uploadId}}).catch(()=>{});throw error}}
 
     async function onCreate(ev){ev.preventDefault();if(!s.status.unlocked){showToast('Unlock vault first.');return}busy(el.createBtn,true,'Saving…','Save Entry');try{const d=await api('/api/entries',{method:'POST',body:createPayload()});el.createForm.reset();switchCreate();await refreshStatus(false);await refreshEntries();showToast('Entry created.');if(d&&d.entry&&d.entry.id)await loadEntry(d.entry.id)}catch(err){showToast(err instanceof Error?err.message:'Create failed.')}finally{busy(el.createBtn,false,'Saving…','Save Entry')}}
     async function onUpload(ev){ev.preventDefault();if(!s.status.unlocked){showToast('Unlock vault first.');return}const file=el.uploadFile.files&&el.uploadFile.files[0];if(!file){showToast('Choose a file first.');return}busy(el.uploadBtn,true,'Preparing…','Upload File');try{const d=await uploadInChunks(file,String(el.uploadTitle.value||'').trim(),String(el.uploadNotes.value||''));el.uploadForm.reset();await refreshStatus(false);await refreshEntries();showToast('File uploaded ('+formatBytes(file.size)+').');if(d&&d.entry&&d.entry.id)await loadEntry(d.entry.id)}catch(err){showToast(err instanceof Error?err.message:'Upload failed.')}finally{busy(el.uploadBtn,false,'Uploading…','Upload File')}}
     async function onSaveDetail(ev){ev.preventDefault();if(!s.selectedId||!s.selected)return;if(nt(s.selected.type||s.selected.entryType)==='file'){showToast('File metadata is read-only.');return}busy(el.saveDetail,true,'Saving…','Save Changes');try{const d=await api('/api/entries/'+encodeURIComponent(s.selectedId),{method:'PUT',body:updatePayload()});s.selected=d.entry||s.selected;fillDetail(s.selected);await refreshStatus(false);await refreshEntries();showToast('Entry updated.')}catch(err){showToast(err instanceof Error?err.message:'Update failed.')}finally{busy(el.saveDetail,false,'Saving…','Save Changes')}}
     async function onCopyPassword(){if(!s.selected)return;try{await navigator.clipboard.writeText(String(el.detailPassword.value||''));showToast('Password copied.');const origText=el.copyPassword.textContent;el.copyPassword.textContent='Copied!';setTimeout(()=>el.copyPassword.textContent=origText,2000)}catch(err){showToast('Failed to copy.')}}
-    async function onDownload(){if(!s.selectedId||!s.selected||nt(s.selected.type||s.selected.entryType)!=='file'){showToast('Select a file entry first.');return}busy(el.downloadFile,true,'Downloading…','Download');try{const r=await fetch('/api/files/'+encodeURIComponent(s.selectedId)+'/download',{method:'GET',headers:{'X-BlankDrive-UI':'1'}});if(!r.ok){let msg='Download failed ('+r.status+')';try{const p=await r.json();if(p&&p.error)msg=p.error}catch{}throw new Error(msg)}const blob=await r.blob();const fallback=s.selected.originalName||'download.bin';const fileName=parseDownloadName(r.headers.get('content-disposition'),fallback);const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=fileName;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2000);showToast('File download started.')}catch(err){showToast(err instanceof Error?err.message:'Download failed.')}finally{busy(el.downloadFile,false,'Downloading…','Download')}}
+    async function onDownload(){if(!s.selectedId||!s.selected||nt(s.selected.type||s.selected.entryType)!=='file'){showToast('Select a file entry first.');return}busy(el.downloadFile,true,'Downloading…','Download');try{const r=await fetch('/api/files/'+encodeURIComponent(s.selectedId)+'/download',{method:'GET',headers:{'X-BlankDrive-UI':UI_CAPABILITY}});if(!r.ok){let msg='Download failed ('+r.status+')';try{const p=await r.json();if(p&&p.error)msg=p.error}catch{}throw new Error(msg)}const blob=await r.blob();const fallback=s.selected.originalName||'download.bin';const fileName=parseDownloadName(r.headers.get('content-disposition'),fallback);const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=fileName;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2000);showToast('File download started.')}catch(err){showToast(err instanceof Error?err.message:'Download failed.')}finally{busy(el.downloadFile,false,'Downloading…','Download')}}
     async function onWatchVideo(){if(!s.selectedId||!s.selected||nt(s.selected.type||s.selected.entryType)!=='file'){showToast('Select a file entry first.');return}if(!isVideoEntry(s.selected)){showToast('This file is not recognized as a video.');return}closeVideoPreview();el.videoTitle.textContent=s.selected.originalName||s.selected.title||'Video Preview';el.videoPlayer.src='/api/files/'+encodeURIComponent(s.selectedId)+'/stream?ts='+Date.now();el.videoModal.classList.remove('hidden');el.closeVideo.focus();el.videoPlayer.load();try{await el.videoPlayer.play()}catch{}}
     async function onToggleFav(){if(!s.selectedId)return;busy(el.toggleFav,true,'…','Favorite');try{await api('/api/entries/'+encodeURIComponent(s.selectedId)+'/favorite',{method:'POST'});await refreshEntries();if(s.selectedId)await loadEntry(s.selectedId);showToast('Favorite toggled.')}catch(err){showToast(err instanceof Error?err.message:'Failed.')}finally{busy(el.toggleFav,false,'…','Favorite')}}
     async function onDelete(){if(!s.selectedId)return;if(!confirm('Delete this entry permanently?'))return;busy(el.deleteEntry,true,'Deleting…','Delete');try{await api('/api/entries/'+encodeURIComponent(s.selectedId),{method:'DELETE'});s.selectedId=null;s.selected=null;showDetail('Entry deleted.');await refreshStatus(false);await refreshEntries();showToast('Entry deleted.')}catch(err){showToast(err instanceof Error?err.message:'Delete failed.')}finally{busy(el.deleteEntry,false,'Deleting…','Delete')}}
     async function onInit(ev){ev.preventDefault();const pw=String(el.initPassword.value||'');if(!pw){showToast('Password required.');return}const b=el.initForm.querySelector('button');busy(b,true,'Creating…','Create Vault');try{await api('/api/init',{method:'POST',body:{password:pw}});el.initForm.reset();await refreshStatus(true);showToast('Vault created!')}catch(err){showToast(err instanceof Error?err.message:'Init failed.')}finally{busy(b,false,'Creating…','Create Vault')}}
-    async function onUnlock(ev){ev.preventDefault();const pw=String(el.unlockPassword.value||'');if(!pw){showToast('Password required.');return}const b=el.unlockForm.querySelector('button');busy(b,true,'Unlocking…','Unlock');try{await api('/api/unlock',{method:'POST',body:{password:pw}});el.unlockForm.reset();await refreshStatus(true);showToast('Vault unlocked!')}catch(err){showToast(err instanceof Error?err.message:'Unlock failed.')}finally{busy(b,false,'Unlocking…','Unlock')}}
+    async function onUnlock(ev){ev.preventDefault();const pw=String(el.unlockPassword.value||'');if(!pw){showToast('Password required.');return}const b=el.unlockForm.querySelector('button');busy(b,true,'Unlocking…','Unlock');try{const code=String(el.unlockCode.value||'').trim();const payload={password:pw};if(code)payload.code=code;await api('/api/unlock',{method:'POST',body:payload});el.unlockForm.reset();await refreshStatus(true);showToast('Vault unlocked!')}catch(err){showToast(err instanceof Error?err.message:'Unlock failed.')}finally{busy(b,false,'Unlocking…','Unlock')}}
     async function onLock(){busy(el.lockButton,true,'Locking…','Lock');try{await api('/api/lock',{method:'POST'});await refreshStatus(true);showToast('Vault locked.')}catch(err){showToast(err instanceof Error?err.message:'Lock failed.')}finally{busy(el.lockButton,false,'Locking…','Lock')}}
-    async function onRunCli(ev){ev.preventDefault();await runCliCommandFromUi(String(el.cliCommand.value||''))}
 
     /* ── Bind ── */
     el.createType.addEventListener('change',switchCreate);
@@ -1093,10 +1080,6 @@ input[type="file"]::file-selector-button {
     el.watchVideo.addEventListener('click',()=>{void onWatchVideo()});
     el.toggleFav.addEventListener('click',()=>{void onToggleFav()});
     el.deleteEntry.addEventListener('click',()=>{void onDelete()});
-    el.cliForm.addEventListener('submit',ev=>{void onRunCli(ev)});
-    el.cliQuickStatus.addEventListener('click',()=>{el.cliCommand.value='status';void runCliCommandFromUi('status')});
-    el.cliQuickSync.addEventListener('click',()=>{el.cliCommand.value='sync --status';void runCliCommandFromUi('sync --status')});
-    el.cliQuickSettings.addEventListener('click',()=>{el.cliCommand.value='settings';void runCliCommandFromUi('settings')});
     el.closeVideo.addEventListener('click',closeVideoPreview);
     el.videoModal.addEventListener('click',ev=>{if(ev.target===el.videoModal)closeVideoPreview()});
     document.addEventListener('keydown',ev=>{

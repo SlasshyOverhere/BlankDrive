@@ -3,354 +3,426 @@ import cors from 'cors';
 import { google } from 'googleapis';
 import dotenv from 'dotenv';
 import crypto from 'crypto';
+import { pathToFileURL } from 'node:url';
 
 dotenv.config();
 
-const app = express();
-const PORT = process.env.PORT || 3410;
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:4310';
-
-// Security: Validate environment variables
-if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
-  console.error('❌ Missing required environment variables');
-  console.error('Please set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in .env file');
-  process.exit(1);
-}
-
-// Middleware
-app.use(cors({
-  origin: FRONTEND_URL,
-  credentials: true
-}));
-app.use(express.json());
-
-// Rate limiting (simple in-memory implementation)
-const rateLimitStore = new Map();
-const RATE_LIMIT_WINDOW = parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 60000;
-const RATE_LIMIT_MAX = parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 10;
-
-function rateLimitMiddleware(req, res, next) {
-  const clientIP = req.ip || req.connection.remoteAddress;
-  const now = Date.now();
-  const windowStart = now - RATE_LIMIT_WINDOW;
-
-  // Clean old entries
-  for (const [key, timestamp] of rateLimitStore.entries()) {
-    if (timestamp < windowStart) {
-      rateLimitStore.delete(key);
-    }
-  }
-
-  // Check current request count
-  const key = `${clientIP}:${req.path}`;
-  const requests = Array.from(rateLimitStore.values()).filter(ts => ts > windowStart).length;
-
-  if (requests >= RATE_LIMIT_MAX) {
-    return res.status(429).json({ error: 'Too many requests. Please try again later.' });
-  }
-
-  rateLimitStore.set(`${key}:${now}`, now);
-  next();
-}
-
-app.use(rateLimitMiddleware);
-
-// Google OAuth2 client configuration
-const oauth2Client = new google.auth.OAuth2(
-  process.env.GOOGLE_CLIENT_ID,
-  process.env.GOOGLE_CLIENT_SECRET,
-  `${FRONTEND_URL}/api/oauth/callback`
-);
-
-const SCOPES = [
-  'https://www.googleapis.com/auth/drive.file',
-  'https://www.googleapis.com/auth/drive.appdata'
-];
+const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
+const STATE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+const MAX_STATE_ENTRIES = 4096;
+const MAX_RATE_BUCKETS = 4096;
+const BODY_LIMIT = '10kb';
 
 /**
- * GET /api/oauth/generate-url
- * Generate OAuth authorization URL
- * Query params:
- *   - redirect_uri (optional) - custom redirect URI
- *   - state (optional) - pre-generated state from frontend
+ * Only loopback HTTP redirect URIs are allowed. HTTPS is required for any
+ * non-loopback deployment, but OAuth callback redirects are always local.
  */
-// Simple in-memory store for code verifiers (use Redis in production)
-const codeVerifierStore = new Map();
+export function isAllowedRedirectUri(uri) {
+  if (typeof uri !== 'string' || !uri) {
+    return false;
+  }
 
-app.get('/api/oauth/generate-url', (req, res) => {
+  let parsed;
   try {
-    // Use custom redirect URI if provided, otherwise use default
-    const redirectUri = req.query.redirect_uri || `${FRONTEND_URL}/api/oauth/callback`;
+    parsed = new URL(uri);
+  } catch {
+    return false;
+  }
 
-    // Use frontend-provided state, code_challenge, and code_verifier
-    const state = req.query.state;
-    const codeChallenge = req.query.code_challenge;
-    const codeChallengeMethod = req.query.code_challenge_method || 'S256';
-    const codeVerifier = req.query.code_verifier;
+  if (parsed.protocol !== 'http:') {
+    return false;
+  }
+  if (parsed.username || parsed.password) {
+    return false;
+  }
+  if (!parsed.port) {
+    return false;
+  }
 
-    if (!state || !codeChallenge || !codeVerifier) {
-      return res.status(400).json({
-        error: 'Missing required parameters: state, code_challenge, and code_verifier are required'
-      });
-    }
+  const hostname = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  const isLoopback =
+    hostname === 'localhost' ||
+    hostname === '::1' ||
+    /^127(?:\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)){3}$/.test(hostname);
 
-    // Verify the code challenge matches the verifier
-    const computedChallenge = crypto.createHash('sha256').update(codeVerifier).digest('base64url');
-    if (computedChallenge !== codeChallenge) {
-      console.warn('⚠️ Code challenge mismatch!');
-      console.log('  Expected:', codeChallenge.substring(0, 20));
-      console.log('  Computed:', computedChallenge.substring(0, 20));
-      // Continue anyway - let Google validate
-    }
+  return isLoopback;
+}
 
-    // Store code verifier with state as key (expires in 10 minutes)
-    codeVerifierStore.set(state, {
-      codeVerifier, // Store the SAME verifier frontend used
-      codeChallenge,
-      redirectUri,
-      createdAt: Date.now()
-    });
+export function validateEnvironment(env) {
+  if (!env || !env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET) {
+    throw new Error(
+      'Missing required environment variables: GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET',
+    );
+  }
+}
 
-    // Clean up old entries (older than 10 minutes)
-    const tenMinutesAgo = Date.now() - 10 * 60 * 1000;
-    for (const [key, value] of codeVerifierStore.entries()) {
-      if (value.createdAt < tenMinutesAgo) {
-        codeVerifierStore.delete(key);
-        console.log('🧹 Cleaned up expired code verifier for state:', key.substring(0, 10));
+function createStateStore() {
+  const store = new Map();
+  const order = [];
+
+  function prune(now = Date.now()) {
+    const cutoff = now - STATE_TTL_MS;
+    for (const [key, entry] of store) {
+      if (entry.createdAt < cutoff) {
+        store.delete(key);
       }
     }
-
-    console.log('💾 Stored code verifier for state:', state.substring(0, 10), '...');
-    console.log('   Verifier (first 20):', codeVerifier.substring(0, 20), '...');
-    console.log('   Challenge (first 20):', codeChallenge.substring(0, 20), '...');
-
-    const authUrl = oauth2Client.generateAuthUrl({
-      access_type: 'offline',
-      scope: SCOPES,
-      prompt: 'consent',
-      code_challenge: codeChallenge, // Use frontend's challenge
-      code_challenge_method: codeChallengeMethod,
-      state,
-      redirect_uri: redirectUri,
-    });
-
-    res.json({
-      authUrl,
-      state,
-      codeVerifier, // Return the SAME verifier for exchange
-      redirectUri: redirectUri,
-    });
-
-    console.log('✓ Auth URL generated successfully');
-  } catch (error) {
-    console.error('❌ Error generating auth URL:', error);
-    res.status(500).json({ error: 'Failed to generate authorization URL' });
+    while (order.length && !store.has(order[0])) {
+      order.shift();
+    }
   }
-});
 
-/**
- * POST /api/oauth/exchange-code
- * Exchange authorization code for tokens
- */
-app.post('/api/oauth/exchange-code', async (req, res) => {
-  try {
-    const { code, state, redirect_uri } = req.body;
+  return {
+    set(key, value) {
+      prune();
+      if (store.size >= MAX_STATE_ENTRIES) {
+        while (order.length && !store.has(order[0])) {
+          order.shift();
+        }
+        const oldest = order.shift();
+        if (oldest) {
+          store.delete(oldest);
+        }
+      }
+      if (!store.has(key)) {
+        order.push(key);
+      }
+      store.set(key, value);
+    },
+    get(key) {
+      const entry = store.get(key);
+      if (!entry) {
+        return undefined;
+      }
+      if (Date.now() - entry.createdAt > STATE_TTL_MS) {
+        store.delete(key);
+        return undefined;
+      }
+      return entry;
+    },
+    delete(key) {
+      return store.delete(key);
+    },
+  };
+}
 
-    console.log('📥 Exchange request received:');
-    console.log('  - Code length:', code?.length || 0);
-    console.log('  - State:', state?.substring(0, 10), '...');
-    console.log('  - Redirect URI:', redirect_uri);
+function createRateLimiter(maxRequests, windowMs) {
+  const buckets = new Map();
+  const order = [];
 
-    if (!code || !state) {
-      console.error('❌ Missing required fields');
-      return res.status(400).json({
-        error: 'Missing code or state',
-        received: { hasCode: !!code, hasState: !!state }
-      });
+  function evictOldest() {
+    while (order.length && !buckets.has(order[0])) {
+      order.shift();
+    }
+    const oldestKey = order.shift();
+    if (oldestKey) {
+      buckets.delete(oldestKey);
+    }
+  }
+
+  function pruneExpired(now) {
+    if (buckets.size < MAX_RATE_BUCKETS) {
+      return;
+    }
+    const cutoff = now - windowMs;
+    for (const [key, record] of buckets) {
+      record.times = record.times.filter((ts) => ts > cutoff);
+      if (record.times.length === 0) {
+        buckets.delete(key);
+      }
+    }
+  }
+
+  return function rateLimit(req, res, next) {
+    const now = Date.now();
+    pruneExpired(now);
+
+    const clientIP = req.ip || (req.socket && req.socket.remoteAddress) || 'unknown';
+    const key = `${clientIP}:${req.path}`;
+
+    let record = buckets.get(key);
+    if (!record) {
+      if (buckets.size >= MAX_RATE_BUCKETS) {
+        evictOldest();
+      }
+      record = { times: [] };
+      buckets.set(key, record);
+      order.push(key);
+    } else {
+      record.times = record.times.filter((ts) => ts > now - windowMs);
     }
 
-    // Retrieve stored code verifier using state
-    const storedData = codeVerifierStore.get(state);
-    if (!storedData) {
-      console.error('❌ No code verifier found for state:', state.substring(0, 10));
-      return res.status(400).json({
-        error: 'Invalid or expired state. Please start the OAuth flow again.',
-        hint: 'The code verifier was not found. This can happen if too much time passed between generating the auth URL and exchanging the code.'
-      });
+    if (record.times.length >= maxRequests) {
+      return res.status(429).json({ error: 'Too many requests. Please try again later.' });
     }
 
-    const { codeVerifier, redirectUri: storedRedirectUri, createdAt } = storedData;
-    console.log('✅ Retrieved stored code verifier for state:', state.substring(0, 10));
-    console.log('   Stored at:', new Date(createdAt).toISOString());
-    console.log('   Age:', Math.round((Date.now() - createdAt) / 1000), 'seconds');
+    record.times.push(now);
+    next();
+  };
+}
 
-    // Verify redirect URI matches
-    const redirectUri = redirect_uri || storedRedirectUri;
-    if (redirectUri !== storedRedirectUri) {
-      console.warn('⚠️ Redirect URI mismatch!');
-      console.log('   Expected:', storedRedirectUri);
-      console.log('   Got:', redirectUri);
-    }
+export function createApp(env, { oauth2Client, fetch } = {}) {
+  validateEnvironment(env);
 
-    console.log('🔄 Using redirect URI:', redirectUri);
-    console.log('🔑 Code verifier (first 20 chars):', codeVerifier.substring(0, 20), '...');
+  const FRONTEND_URL = env.FRONTEND_URL || 'http://localhost:4310';
+  const client =
+    oauth2Client ||
+    new google.auth.OAuth2(
+      env.GOOGLE_CLIENT_ID,
+      env.GOOGLE_CLIENT_SECRET,
+      `${FRONTEND_URL}/api/oauth/callback`,
+    );
+  const globalFetch = fetch || globalThis.fetch;
+  const stateStore = createStateStore();
+  const pendingExchanges = new Set();
+  const rateLimit = createRateLimiter(
+    parseInt(env.RATE_LIMIT_MAX_REQUESTS, 10) || 10,
+    parseInt(env.RATE_LIMIT_WINDOW_MS, 10) || 60000,
+  );
 
-    // Exchange code for tokens
-    console.log('🔑 Exchanging code for tokens...');
-    console.log('   Code (first 20):', code.substring(0, 20), '...');
-    console.log('   Code verifier (first 20):', codeVerifier.substring(0, 20), '...');
-    console.log('   Redirect URI:', redirectUri);
+  const app = express();
+  app.set('trust proxy', false);
+  app.use(
+    cors({
+      origin: FRONTEND_URL,
+      credentials: true,
+    }),
+  );
+  app.use(express.json({ limit: BODY_LIMIT }));
+  app.use(rateLimit);
 
-    // Try manual token exchange to ensure code_verifier is sent
-    const tokenUrl = 'https://oauth2.googleapis.com/token';
-    const postData = new URLSearchParams({
-      code,
-      client_id: process.env.GOOGLE_CLIENT_ID,
-      client_secret: process.env.GOOGLE_CLIENT_SECRET,
-      redirect_uri: redirectUri,
-      grant_type: 'authorization_code',
-      code_verifier: codeVerifier,
-    });
+  const SCOPES = [
+    'https://www.googleapis.com/auth/drive.file',
+    'https://www.googleapis.com/auth/drive.appdata',
+  ];
 
-    console.log('📤 Sending POST to Google:');
-    console.log('   URL:', tokenUrl);
-    console.log('   Body:', postData.toString());
-    console.log('   Body keys:', [...postData.keys()].join(', '));
-
+  /**
+   * GET /api/oauth/generate-url
+   * Generates a Google authorization URL using the frontend-provided PKCE
+   * material. Redirect URIs are restricted to loopback.
+   */
+  app.get('/api/oauth/generate-url', (req, res) => {
     try {
-      const response = await fetch(tokenUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: postData.toString(),
-      });
+      const redirectUri = req.query.redirect_uri || `${FRONTEND_URL}/api/oauth/callback`;
+      const state = req.query.state;
+      const codeChallenge = req.query.code_challenge;
+      const codeChallengeMethod = req.query.code_challenge_method || 'S256';
+      const codeVerifier = req.query.code_verifier;
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        console.error('❌ Google returned error:', data);
-        throw new Error(`Google OAuth error: ${data.error_description || data.error}`);
+      if (!state || !codeChallenge || !codeVerifier) {
+        return res.status(400).json({
+          error: 'Missing required parameters: state, code_challenge, and code_verifier are required',
+        });
       }
 
-      console.log('✅ Google returned tokens');
-      const tokens = {
-        access_token: data.access_token,
-        refresh_token: data.refresh_token,
-        expiry_date: data.expires_in ? Date.now() + (data.expires_in * 1000) : undefined,
-      };
-
-      console.log('   Has access_token:', !!tokens.access_token);
-      console.log('   Has refresh_token:', !!tokens.refresh_token);
-
-      if (!tokens.access_token) {
-        console.error('❌ No access token in response');
-        throw new Error('No access token received');
+      if (codeChallengeMethod !== 'S256') {
+        return res.status(400).json({ error: 'Invalid PKCE parameters.' });
+      }
+      if (
+        typeof codeVerifier !== 'string' ||
+        typeof codeChallenge !== 'string' ||
+        typeof state !== 'string' ||
+        state.length < 8
+      ) {
+        return res.status(400).json({ error: 'Invalid PKCE parameters.' });
       }
 
-      // Clean up used code verifier
-      codeVerifierStore.delete(state);
-      console.log('🧹 Cleaned up used code verifier');
+      const computedChallenge = crypto
+        .createHash('sha256')
+        .update(codeVerifier)
+        .digest('base64url');
+      if (computedChallenge !== codeChallenge) {
+        return res.status(400).json({ error: 'Invalid PKCE parameters.' });
+      }
 
-      res.json({
-        success: true,
-        tokens: {
-          access_token: tokens.access_token,
-          refresh_token: tokens.refresh_token,
-          expiry_date: tokens.expiry_date,
-        },
+      if (!isAllowedRedirectUri(redirectUri)) {
+        return res.status(400).json({ error: 'Invalid redirect URI.' });
+      }
+
+      stateStore.set(state, {
+        codeVerifier,
+        redirectUri,
+        createdAt: Date.now(),
       });
 
-      console.log('✓ Exchange completed successfully');
-    } catch (innerError) {
-      // Error from manual fetch request
-      console.error('❌ Manual token exchange failed:', innerError);
-      throw innerError;
+      const authUrl = client.generateAuthUrl({
+        access_type: 'offline',
+        scope: SCOPES,
+        prompt: 'consent',
+        code_challenge: codeChallenge,
+        code_challenge_method: 'S256',
+        state,
+        redirect_uri: redirectUri,
+      });
+
+      res.json({ authUrl, state, codeVerifier, redirectUri });
+    } catch (error) {
+      console.error('Error generating auth URL:', error);
+      res.status(500).json({ error: 'Failed to generate authorization URL' });
     }
-  } catch (error) {
-    // Error from outer try block
-    console.error('❌ Error exchanging code:', error);
-    console.error('  Error details:', {
-      message: error.message,
-      stack: error.stack,
-      response: error.response?.data
-    });
+  });
 
-    res.status(500).json({
-      error: 'Failed to exchange authorization code',
-      message: error.message,
-      details: error.response?.data || error.toString(),
-    });
-  }
-});
+  /**
+   * POST /api/oauth/exchange-code
+   * Exchanges an authorization code for tokens. Requires a valid, unexpired
+   * state that was issued by this server and an exact redirect-URI match.
+   */
+  app.post('/api/oauth/exchange-code', async (req, res) => {
+    try {
+      const { code, state, redirect_uri: redirectUri } = req.body || {};
 
-/**
- * POST /api/oauth/refresh-token
- * Refresh an expired access token
- */
-app.post('/api/oauth/refresh-token', async (req, res) => {
-  try {
-    const { refresh_token } = req.body;
+      if (!code || !state) {
+        return res.status(400).json({
+          error: 'Missing code or state',
+          received: { hasCode: !!code, hasState: !!state },
+        });
+      }
 
-    if (!refresh_token) {
-      return res.status(400).json({ error: 'Missing refresh_token' });
+      const stored = stateStore.get(state);
+      if (!stored) {
+        return res.status(400).json({ error: 'Invalid or expired OAuth state.' });
+      }
+
+      // redirect_uri is optional; when omitted, use the one bound at
+      // generate-url time. When provided it must match exactly.
+      const effectiveRedirectUri = redirectUri || stored.redirectUri;
+      if (redirectUri !== undefined && redirectUri !== stored.redirectUri) {
+        stateStore.delete(state);
+        return res.status(400).json({ error: 'Invalid or expired OAuth state.' });
+      }
+
+      if (pendingExchanges.has(state)) {
+        return res.status(409).json({ error: 'OAuth exchange already in progress.' });
+      }
+      pendingExchanges.add(state);
+
+      const postData = new URLSearchParams({
+        code,
+        client_id: env.GOOGLE_CLIENT_ID,
+        client_secret: env.GOOGLE_CLIENT_SECRET,
+        redirect_uri: effectiveRedirectUri,
+        grant_type: 'authorization_code',
+        code_verifier: stored.codeVerifier,
+      });
+
+      try {
+        const response = await globalFetch(GOOGLE_TOKEN_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: postData.toString(),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error_description || data.error || 'Google OAuth error');
+        }
+
+        const tokens = {
+          access_token: data.access_token,
+          refresh_token: data.refresh_token,
+          expiry_date: data.expires_in ? Date.now() + data.expires_in * 1000 : undefined,
+        };
+
+        if (!tokens.access_token) {
+          throw new Error('No access token received');
+        }
+
+        stateStore.delete(state);
+        res.json({ success: true, tokens });
+      } finally {
+        pendingExchanges.delete(state);
+      }
+    } catch (error) {
+      console.error('Error exchanging code:', error);
+      res.status(500).json({ error: 'Failed to exchange authorization code' });
     }
+  });
 
-    oauth2Client.setCredentials({ refresh_token });
-    const { credentials } = await oauth2Client.refreshAccessToken();
+  /**
+   * POST /api/oauth/refresh-token
+   * Intentionally disabled. Refresh tokens must remain client-side.
+   */
+  app.post('/api/oauth/refresh-token', (req, res) => {
+    res.status(410).json({
+      error: 'Refresh endpoint disabled; refresh tokens must remain client-side.',
+    });
+  });
 
+  app.get('/health', (req, res) => {
+    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  });
+
+  app.get('/', (req, res) => {
     res.json({
-      success: true,
-      tokens: {
-        access_token: credentials.access_token,
-        expiry_date: credentials.expiry_date,
+      service: 'BlankDrive OAuth Backend',
+      version: '1.0.0',
+      endpoints: {
+        'GET /api/oauth/generate-url': 'Generate OAuth authorization URL',
+        'POST /api/oauth/exchange-code': 'Exchange code for tokens',
+        'POST /api/oauth/refresh-token': 'Disabled; refresh tokens remain client-side',
+        'GET /health': 'Health check',
       },
     });
-  } catch (error) {
-    console.error('Error refreshing token:', error);
-    res.status(500).json({
-      error: 'Failed to refresh token',
-      message: error.message,
-    });
-  }
-});
-
-/**
- * GET /health
- * Health check endpoint
- */
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
-
-/**
- * GET /
- * API info
- */
-app.get('/', (req, res) => {
-  res.json({
-    service: 'BlankDrive OAuth Backend',
-    version: '1.0.0',
-    endpoints: {
-      'GET /api/oauth/generate-url': 'Generate OAuth authorization URL',
-      'POST /api/oauth/exchange-code': 'Exchange code for tokens',
-      'POST /api/oauth/refresh-token': 'Refresh access token',
-      'GET /health': 'Health check',
-    },
   });
-});
 
-// Error handling middleware
-app.use((err, req, res, next) => {
-  console.error('Unhandled error:', err);
-  res.status(500).json({ error: 'Internal server error' });
-});
+  // Error handling middleware
+  app.use((err, req, res, next) => {
+    if (err && err.type === 'entity.too.large') {
+      return res.status(413).json({ error: 'Request body too large.' });
+    }
+    if (err instanceof SyntaxError && err.status === 400) {
+      return res.status(400).json({ error: 'Invalid JSON body.' });
+    }
+    console.error('Unhandled error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  });
 
-// Start server
-app.listen(PORT, () => {
-  console.log(`✅ BlankDrive OAuth Backend running on http://localhost:${PORT}`);
-  console.log(`📍 Frontend URL: ${FRONTEND_URL}`);
-  console.log(`🔐 Google Client ID: ${process.env.GOOGLE_CLIENT_ID.substring(0, 20)}...`);
-});
+  return app;
+}
 
-export default app;
+export function startServer(env, options) {
+  const app = createApp(env, options);
+  const host = env.OAUTH_HOST || '127.0.0.1';
+  const port = env.PORT !== undefined && env.PORT !== '' ? parseInt(env.PORT, 10) : 3410;
+
+  const server = app.listen(port, host, () => {
+    const clientId = String(env.GOOGLE_CLIENT_ID || '').substring(0, 20);
+    console.log(`BlankDrive OAuth Backend running on http://${host}:${port}`);
+    console.log(`Frontend URL: ${env.FRONTEND_URL || 'http://localhost:4310'}`);
+    console.log(`Google Client ID: ${clientId}...`);
+  });
+  return server;
+}
+
+const defaultEnv = {
+  GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+  GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+  FRONTEND_URL: process.env.FRONTEND_URL || 'http://localhost:4310',
+  PORT: process.env.PORT,
+  OAUTH_HOST: process.env.OAUTH_HOST,
+  RATE_LIMIT_MAX_REQUESTS: process.env.RATE_LIMIT_MAX_REQUESTS,
+  RATE_LIMIT_WINDOW_MS: process.env.RATE_LIMIT_WINDOW_MS,
+};
+
+let defaultApp;
+try {
+  validateEnvironment(defaultEnv);
+  defaultApp = createApp(defaultEnv);
+} catch (error) {
+  console.error('❌ Missing required environment variables');
+  console.error('Please set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in .env file');
+}
+
+export default defaultApp;
+
+// Start only when this module is the main entrypoint (including `?main-guard`
+// test imports that re-enter with a real entry path).
+const isMain =
+  process.argv[1] &&
+  import.meta.url.startsWith(pathToFileURL(process.argv[1]).href);
+if (isMain && defaultApp) {
+  startServer(defaultEnv);
+}
