@@ -4,35 +4,33 @@ export function renderWebUiHtml(nonce: string, uiCapability?: string): string {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>BlankDrive · Secure Vault</title>
-  <meta name="description" content="BlankDrive Secure Vault — Military-grade encrypted storage manager">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet">
+ <title>BlankDrive · Secure Vault</title>
+ <meta name="description" content="BlankDrive private encrypted archive">
 <style nonce="${nonce}">
 :root {
-  --font-sans: 'Sora', 'Segoe UI', sans-serif;
-  --font-mono: 'IBM Plex Mono', 'Consolas', monospace;
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 18px;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --radius-sm: 5px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
   --transition: 0.2s ease;
-  --bg: #050505;
-  --bg-alt: #0f0f0f;
-  --surface: rgba(19, 19, 19, 0.9);
-  --surface-2: rgba(28, 28, 28, 0.95);
-  --input-bg: #101010;
-  --bg-input: #101010;
-  --text: #f2f2f2;
-  --text-muted: #a6a6a6;
-  --border: #2b2b2b;
-  --border-strong: #3a3a3a;
-  --accent: #e6e6e6;
-  --accent-soft: rgba(230, 230, 230, 0.15);
-  --ok: #d0d0d0;
-  --warn: #b6b6b6;
-  --danger: #919191;
-  --shadow: 0 16px 42px rgba(0, 0, 0, 0.45);
+  --bg: #111211;
+  --bg-alt: #171917;
+  --surface: #1c1e1b;
+  --surface-2: #242722;
+  --input-bg: #121411;
+  --bg-input: #121411;
+  --text: #f1f0e8;
+  --text-muted: #9c9f94;
+  --text-faint: #686d65;
+  --border: #30352e;
+  --border-strong: #485046;
+  --accent: #e5a15d;
+  --accent-soft: rgba(229, 161, 93, 0.14);
+  --ok: #a9c18c;
+  --warn: #e5a15d;
+  --danger: #d98172;
+  --shadow: 0 18px 36px rgba(0, 0, 0, 0.2);
   color-scheme: dark;
 }
 
@@ -56,52 +54,40 @@ body {
   overflow-x: hidden;
   overflow-y: auto;
   background:
-    radial-gradient(900px 420px at 0% -10%, rgba(255, 255, 255, 0.08), transparent 65%),
-    radial-gradient(840px 320px at 100% 0%, rgba(255, 255, 255, 0.06), transparent 70%),
-    linear-gradient(180deg, var(--bg) 0%, var(--bg-alt) 100%);
+    radial-gradient(700px 480px at 84% -14%, rgba(229, 161, 93, 0.08), transparent 68%),
+    linear-gradient(135deg, #101210 0%, #181a17 52%, #121412 100%);
 }
 
 body::before {
   content: '';
   position: fixed;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 50%;
   pointer-events: none;
-  background-image: radial-gradient(rgba(255, 255, 255, 0.07) 0.5px, transparent 0.5px);
-  background-size: 5px 5px;
-  opacity: 0.12;
+  border-left: 1px solid rgba(255, 255, 255, 0.025);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.012));
   z-index: -1;
 }
 
 .app {
   width: 100%;
-  max-width: 1420px;
+  max-width: 1480px;
   min-height: 100vh;
   margin: 0 auto;
-  padding: 16px;
+  padding: 22px 28px 34px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  animation: fadeIn 0.32s ease;
-}
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  gap: 26px;
 }
 
 .header-bar,
 .vault-controls,
 .card {
-  background: linear-gradient(170deg, rgba(23, 23, 23, 0.95) 0%, rgba(14, 14, 14, 0.96) 100%);
+  background: rgba(28, 30, 27, 0.86);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow);
 }
 
 .header-bar {
@@ -109,50 +95,63 @@ body::before {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 18px 22px;
+  padding: 16px 18px;
+  border-top-color: #51594d;
 }
 
 .header-left {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
+}
+
+.header-intro {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-left: auto;
+  margin-right: 24px;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+.header-intro strong {
+  color: var(--text);
+  font-size: 0.78rem;
+  font-weight: 550;
 }
 
 .brand-icon {
-  width: 64px;
-  height: 48px;
-  border-radius: 12px;
-  overflow: hidden;
-  border: 1px solid var(--border-strong);
-  background: #0a0f19;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
 }
 
 .brand-logo {
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   object-position: center;
 }
 
 .brand-text h1 {
   margin: 0;
-  font-size: 1.08rem;
-  font-weight: 700;
-  letter-spacing: 0.01em;
+  font-size: 1.05rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
 }
 
 .brand-text .tagline {
-  margin-top: 2px;
-  font-size: 0.77rem;
+  margin: 3px 0 0;
+  font-size: 0.72rem;
   color: var(--text-muted);
 }
 
 .header-right {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 16px;
   flex-wrap: wrap;
 }
 
@@ -160,38 +159,41 @@ body::before {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 5px 12px;
-  border-radius: 999px;
-  border: 1px solid var(--border-strong);
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: #d9d9d9;
-  background: rgba(255, 255, 255, 0.03);
+  gap: 7px;
+  padding: 3px 0;
+  font-size: 0.7rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+}
+
+.badge::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-faint);
 }
 
 .badge.ok {
-  color: #ffffff;
-  border-color: #565656;
-  background: rgba(255, 255, 255, 0.09);
+  color: var(--ok);
 }
 
 .badge.warn {
-  color: #dfdfdf;
-  border-color: #454545;
-  background: rgba(255, 255, 255, 0.06);
+  color: var(--accent);
 }
 
 .badge.bad {
-  color: #b8b8b8;
-  border-color: #383838;
-  background: rgba(255, 255, 255, 0.04);
+  color: var(--danger);
 }
+
+.badge.ok::before { background: var(--ok); }
+.badge.warn::before { background: var(--accent); }
+.badge.bad::before { background: var(--danger); }
 
 .meta-text {
   font-family: var(--font-mono);
-  font-size: 0.74rem;
+  font-size: 0.68rem;
   color: var(--text-muted);
 }
 
@@ -200,21 +202,22 @@ body::before {
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  padding: 14px 16px;
+  gap: 16px;
+  padding: 13px 16px;
+  background: rgba(18, 20, 18, 0.72);
 }
 
 .vault-primary {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 7px;
 }
 
 .vault-controls form {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
 }
 
 .vault-meta {
@@ -235,8 +238,8 @@ body::before {
 
 .main-grid {
   display: grid;
-  grid-template-columns: 320px minmax(0, 1fr);
-  gap: 14px;
+  grid-template-columns: 288px minmax(0, 1fr);
+  gap: 18px;
   align-items: start;
 }
 
@@ -244,29 +247,31 @@ body::before {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 18px;
 }
 
 .forms-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
+  gap: 18px;
 }
 
 .card {
-  padding: 16px;
+  padding: 19px;
   display: flex;
   flex-direction: column;
 }
 
 .sidebar {
-  min-height: 420px;
+  min-height: 560px;
+  position: sticky;
+  top: 22px;
 }
 
 .card-title {
-  margin: 0 0 12px;
-  font-size: 0.98rem;
-  font-weight: 700;
+  margin: 0 0 14px;
+  font-size: 0.92rem;
+  font-weight: 650;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -289,12 +294,12 @@ textarea,
 select {
   width: 100%;
   font: inherit;
-  font-size: 0.89rem;
+  font-size: 0.86rem;
   color: var(--text);
   border: 1px solid var(--border);
   background: var(--input-bg);
-  border-radius: var(--radius-md);
-  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  padding: 10px 11px;
   transition: border-color var(--transition), box-shadow var(--transition), background var(--transition);
 }
 
@@ -329,25 +334,25 @@ input:focus,
 textarea:focus,
 select:focus {
   outline: none;
-  border-color: #555;
+  border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 button:focus-visible {
   outline: none;
-  border-color: #555;
+  border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 button {
   font: inherit;
-  font-size: 0.84rem;
-  font-weight: 600;
-  border-radius: var(--radius-md);
+  font-size: 0.79rem;
+  font-weight: 650;
+  border-radius: var(--radius-sm);
   border: 1px solid transparent;
   padding: 9px 13px;
   cursor: pointer;
-  transition: background var(--transition), border-color var(--transition), color var(--transition), opacity var(--transition), transform var(--transition);
+  transition: background var(--transition), border-color var(--transition), color var(--transition), opacity var(--transition);
   white-space: nowrap;
 }
 
@@ -357,14 +362,13 @@ button:disabled {
 }
 
 .btn-primary {
-  color: #0b0b0b;
-  background: linear-gradient(180deg, #efefef 0%, #bcbcbc 100%);
-  border-color: #9f9f9f;
+  color: #19150f;
+  background: var(--accent);
+  border-color: #f0b976;
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: linear-gradient(180deg, #ffffff 0%, #cecece 100%);
-  transform: translateY(-1px);
+  background: #f0b976;
 }
 
 .btn-ghost {
@@ -374,18 +378,18 @@ button:disabled {
 }
 
 .btn-ghost:hover:not(:disabled) {
-  border-color: var(--border-strong);
-  background: #252525;
+  border-color: #67705f;
+  background: #2b302a;
 }
 
 .btn-danger {
-  color: #e5e5e5;
-  background: linear-gradient(180deg, #3a3a3a 0%, #2a2a2a 100%);
-  border-color: #434343;
+  color: #f2c1b6;
+  background: rgba(217, 129, 114, 0.09);
+  border-color: rgba(217, 129, 114, 0.32);
 }
 
 .btn-danger:hover:not(:disabled) {
-  background: linear-gradient(180deg, #444 0%, #303030 100%);
+  background: rgba(217, 129, 114, 0.16);
 }
 
 .btn-sm {
@@ -399,8 +403,8 @@ button:disabled {
   margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  max-height: min(70vh, 840px);
+  gap: 4px;
+  max-height: min(74vh, 860px);
   overflow-y: auto;
 }
 
@@ -417,29 +421,30 @@ button:disabled {
   width: 100%;
   text-align: left;
   border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: #181818;
+  border-radius: var(--radius-sm);
+  background: transparent;
   color: var(--text);
-  padding: 10px 11px;
+  padding: 11px 10px;
 }
 
 .entry-item:hover {
-  border-color: var(--border-strong);
+  border-color: #414941;
+  background: rgba(255, 255, 255, 0.025);
 }
 
 .entry-item.active {
-  border-color: #6d6d6d;
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.18) inset;
+  border-color: rgba(229, 161, 93, 0.6);
+  background: rgba(229, 161, 93, 0.08);
 }
 
 .entry-item.active:focus-visible {
-  border-color: #6d6d6d;
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.18) inset, 0 0 0 3px var(--accent-soft);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 .entry-item .entry-title {
   font-weight: 600;
-  font-size: 0.86rem;
+  font-size: 0.83rem;
   margin-bottom: 4px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -447,7 +452,7 @@ button:disabled {
 }
 
 .entry-item .entry-meta {
-  font-size: 0.72rem;
+  font-size: 0.67rem;
   color: var(--text-muted);
   display: flex;
   align-items: center;
@@ -457,12 +462,12 @@ button:disabled {
 .pill {
   display: inline-flex;
   align-items: center;
-  border-radius: 999px;
-  border: 1px solid #4f4f4f;
-  font-size: 0.64rem;
+  border-radius: 3px;
+  border: 1px solid #4a5147;
+  font-size: 0.59rem;
   font-weight: 700;
   letter-spacing: 0.06em;
-  padding: 2px 8px;
+  padding: 2px 6px;
   text-transform: uppercase;
   color: #d9d9d9;
   background: rgba(255, 255, 255, 0.05);
@@ -471,15 +476,15 @@ button:disabled {
 .pill.password,
 .pill.note,
 .pill.file {
-  color: #d9d9d9;
-  border-color: #4f4f4f;
-  background: rgba(255, 255, 255, 0.05);
+  color: #c7d0bd;
+  border-color: #4a5147;
+  background: rgba(176, 198, 151, 0.08);
 }
 
 .form-stack {
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  gap: 10px;
 }
 
 .form-actions {
@@ -526,12 +531,13 @@ button:disabled {
 .hint {
   margin: 0;
   color: var(--text-muted);
-  font-size: 0.82rem;
+  font-size: 0.78rem;
 }
 
 .hint.empty-state {
-  padding: 20px 10px;
+  padding: 28px 12px;
   text-align: center;
+  color: var(--text-faint);
 }
 
 .hidden {
@@ -539,25 +545,27 @@ button:disabled {
 }
 
 .detail-panel {
-  min-height: 160px;
+  min-height: 260px;
+  border-top-color: #5a654f;
 }
 
 .cli-panel {
-  min-height: 250px;
+  min-height: 230px;
+  background: #151714;
 }
 
 input[type="file"] {
-  padding: 7px;
+  padding: 6px;
 }
 
 input[type="file"]::file-selector-button {
   font: inherit;
   font-size: 0.8rem;
   font-weight: 600;
-  color: #111;
-  background: #d9d9d9;
-  border: 1px solid #8f8f8f;
-  border-radius: 8px;
+  color: #19150f;
+  background: var(--accent);
+  border: 1px solid #f0b976;
+  border-radius: 4px;
   padding: 6px 10px;
   margin-right: 10px;
   cursor: pointer;
@@ -569,8 +577,8 @@ input[type="file"]::file-selector-button {
   bottom: 18px;
   max-width: min(92vw, 420px);
   padding: 12px 14px;
-  background: #1a1a1a;
-  border: 1px solid #424242;
+  background: #252a23;
+  border: 1px solid #59624f;
   border-radius: var(--radius-md);
   box-shadow: var(--shadow);
   color: var(--text);
@@ -590,7 +598,7 @@ input[type="file"]::file-selector-button {
 .video-modal {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.86);
+  background: rgba(7, 9, 7, 0.9);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -600,9 +608,9 @@ input[type="file"]::file-selector-button {
 
 .video-shell {
   width: min(1120px, 100%);
-  border: 1px solid #404040;
-  border-radius: 14px;
-  background: #101010;
+  border: 1px solid #4b5448;
+  border-radius: var(--radius-lg);
+  background: #171a16;
   box-shadow: 0 24px 48px rgba(0, 0, 0, 0.5);
   overflow: hidden;
 }
@@ -613,7 +621,7 @@ input[type="file"]::file-selector-button {
   align-items: center;
   gap: 10px;
   padding: 12px 14px;
-  border-bottom: 1px solid #2f2f2f;
+  border-bottom: 1px solid var(--border);
 }
 
 .video-subtitle {
@@ -641,11 +649,20 @@ input[type="file"]::file-selector-button {
   overflow: auto;
   padding: 12px;
   border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   background: var(--bg-input);
   font-family: var(--font-mono);
-  font-size: .8rem;
+  font-size: .76rem;
   white-space: pre-wrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 @media (max-width: 1240px) {
@@ -657,7 +674,7 @@ input[type="file"]::file-selector-button {
   }
 
   .main-grid {
-    grid-template-columns: 300px minmax(0, 1fr);
+    grid-template-columns: 260px minmax(0, 1fr);
   }
 
   .forms-grid {
@@ -668,12 +685,16 @@ input[type="file"]::file-selector-button {
 @media (max-width: 900px) {
   .app {
     min-height: 100vh;
-    padding: 14px;
+    padding: 16px;
   }
 
   .header-bar {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .header-intro {
+    margin: 0;
   }
 
   .vault-controls {
@@ -697,6 +718,11 @@ input[type="file"]::file-selector-button {
     align-items: stretch;
   }
 
+  .sidebar {
+    position: static;
+    min-height: 0;
+  }
+
   .entry-list {
     max-height: 38vh;
   }
@@ -715,10 +741,26 @@ input[type="file"]::file-selector-button {
 }
 
 @media (max-width: 640px) {
+  .app {
+    padding: 12px 12px 24px;
+    gap: 16px;
+  }
+
+  .header-right {
+    width: 100%;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
   .card,
   .header-bar,
   .vault-controls {
-    padding: 12px;
+    padding: 14px;
+  }
+
+  #initForm input,
+  #unlockForm input {
+    max-width: none !important;
   }
 
   .filters {
@@ -753,8 +795,12 @@ input[type="file"]::file-selector-button {
         </div>
         <div class="brand-text">
           <h1>BlankDrive</h1>
-          <p class="tagline">Secure Vault Console</p>
+          <p class="tagline">Private archive / local only</p>
         </div>
+      </div>
+      <div class="header-intro">
+        <strong>Everything important, kept close.</strong>
+        <span>Encrypted entries, notes, and files in one quiet workspace.</span>
       </div>
       <div class="header-right">
         <span id="vaultBadge" class="badge warn">Checking…</span>
@@ -775,10 +821,10 @@ input[type="file"]::file-selector-button {
           <button type="submit" class="btn-primary btn-sm">Unlock</button>
         </form>
         <button id="lockButton" type="button" class="btn-ghost btn-sm">Lock</button>
-        <button id="refreshButton" type="button" class="btn-ghost btn-sm">Refresh</button>
+        <button id="refreshButton" type="button" class="btn-ghost btn-sm">Refresh state</button>
       </div>
       <div class="vault-meta">
-        <span id="entryCount" class="badge">Entries: 0</span>
+        <span id="entryCount" class="badge">0 entries</span>
         <span id="vaultPath" class="meta-text"></span>
       </div>
     </section>
@@ -788,11 +834,12 @@ input[type="file"]::file-selector-button {
       <!-- SIDEBAR: Entry List -->
       <aside class="card sidebar">
         <div class="card-title">
-          <span><span class="icon"></span>Entries</span>
+          <span><span class="icon"></span>Your archive</span>
           <button id="reloadEntries" type="button" class="btn-ghost btn-sm">Reload</button>
         </div>
+        <p class="hint" style="margin:-5px 0 14px">Search across everything you have tucked away.</p>
         <div class="filters">
-          <input id="search" type="search" placeholder="Search… (/)" aria-label="Search entries (Press / to focus)">
+          <input id="search" type="search" placeholder="Search archive… (/)" aria-label="Search entries (Press / to focus)">
           <select id="typeFilter" aria-label="Filter by type"><option value="all">All</option><option value="password">Passwords</option><option value="note">Notes</option><option value="file">Files</option></select>
         </div>
         <ul id="entryList" class="entry-list"></ul>
@@ -802,8 +849,8 @@ input[type="file"]::file-selector-button {
         <div class="forms-grid">
           <!-- ADD ENTRY -->
           <div class="card">
-            <div class="card-title"><span><span class="icon"></span>Add Entry</span></div>
-            <p class="hint" style="margin-bottom:12px">Create passwords, secure notes, or upload files.</p>
+            <div class="card-title"><span><span class="icon"></span>Make something private</span></div>
+            <p class="hint" style="margin-bottom:12px">A password or note becomes part of the archive immediately.</p>
             <form id="createForm" class="form-stack">
               <select id="createType" aria-label="Entry type"><option value="password">Password Entry</option><option value="note">Secure Note</option></select>
               <input id="createTitle" type="text" maxlength="256" placeholder="Title *" aria-label="Entry title" required>
@@ -815,26 +862,26 @@ input[type="file"]::file-selector-button {
                 <textarea id="createNotes" maxlength="65536" placeholder="Notes (optional)" aria-label="Notes"></textarea>
               </div>
               <div id="createNote" class="form-stack hidden"><textarea id="createContent" maxlength="1048576" placeholder="Note content" aria-label="Note content"></textarea></div>
-              <button id="createBtn" type="submit" class="btn-primary">Save Entry</button>
+              <button id="createBtn" type="submit" class="btn-primary">Add to archive</button>
             </form>
           </div>
 
           <!-- FILE UPLOAD -->
           <div class="card">
-            <div class="card-title"><span><span class="icon"></span>File Upload</span></div>
-            <p class="hint" style="margin-bottom:12px">Encrypt and store files in your vault. Large files are uploaded in chunks.</p>
+            <div class="card-title"><span><span class="icon"></span>Bring in a file</span></div>
+            <p class="hint" style="margin-bottom:12px">Encrypt and store a file here. Larger files upload in secure chunks.</p>
             <form id="uploadForm" class="form-stack">
               <input id="uploadFile" type="file" required aria-label="File to upload">
               <input id="uploadTitle" type="text" maxlength="256" placeholder="Custom title (optional)" aria-label="File title">
               <textarea id="uploadNotes" maxlength="65536" placeholder="Notes (optional)" aria-label="File notes"></textarea>
-              <button id="uploadBtn" type="submit" class="btn-primary">Upload File</button>
+              <button id="uploadBtn" type="submit" class="btn-primary">Encrypt file</button>
             </form>
           </div>
         </div>
 
         <!-- DETAIL PANEL -->
         <section class="card detail-panel">
-          <div class="card-title"><span><span class="icon"></span>Entry Detail</span></div>
+          <div class="card-title"><span><span class="icon"></span>Entry detail</span><span class="meta-text">Edit with care</span></div>
           <p id="detailHint" class="hint empty-state">Select an entry to inspect, edit, download, or preview video.</p>
           <form id="detailForm" class="form-stack hidden">
             <input id="detailTitle" type="text" maxlength="256" required aria-label="Entry title">
@@ -864,7 +911,7 @@ input[type="file"]::file-selector-button {
 
         <!-- CLI CONSOLE -->
         <section class="card cli-panel">
-          <div class="card-title"><span><span class="icon"></span>CLI Console</span></div>
+          <div class="card-title"><span><span class="icon"></span>Command line</span><span class="meta-text">BLANK</span></div>
           <p class="hint">The web UI does not execute arbitrary CLI commands. Use the local terminal for administrative operations.</p>
           <form id="cliForm" class="form-stack" style="margin-top:12px">
             <input id="cliCommand" type="text" maxlength="2048" placeholder="CLI disabled in Web UI" autocomplete="off" aria-label="CLI command" disabled>
@@ -1002,7 +1049,7 @@ input[type="file"]::file-selector-button {
       if(!s.status.vaultExists){el.badge.textContent='Not Initialized';el.badge.className='badge bad';el.meta.textContent='Create a vault to begin.'}
       else if(!s.status.unlocked){el.badge.textContent='Locked';el.badge.className='badge warn';el.meta.textContent='Unlock to access entries.'}
       else{el.badge.textContent='Unlocked';el.badge.className='badge ok';el.meta.textContent='Created: '+dt(s.status.stats?s.status.stats.created:null)}
-      el.entryCount.textContent='Entries: '+String(s.status.stats?s.status.stats.entryCount:0);
+       el.entryCount.textContent=String(s.status.stats?s.status.stats.entryCount:0)+' entries';
       el.vaultPath.textContent=s.status.vaultPath||'';
       el.vaultPath.title=s.status.vaultPath||'';
 
@@ -1067,8 +1114,8 @@ input[type="file"]::file-selector-button {
     async function uploadInChunks(file,title,notes){const init=await api('/api/files/upload/start',{method:'POST',body:{fileName:file.name,title,notes,totalSize:file.size,chunkSize:DEFAULT_UPLOAD_CHUNK_BYTES}});const uploadId=String(init&&init.uploadId||'');if(!uploadId)throw new Error('Failed to initialize upload.');const chunkSize=Number(init&&init.chunkSize)||DEFAULT_UPLOAD_CHUNK_BYTES;const totalChunks=Number(init&&init.totalChunks)||0;let uploadedBytes=0;try{for(let i=0;i<totalChunks;i++){const start=i*chunkSize;const end=Math.min(start+chunkSize,file.size);const chunk=file.slice(start,end);const r=await fetch('/api/files/upload/chunk?uploadId='+encodeURIComponent(uploadId)+'&index='+i,{method:'POST',headers:{'X-BlankDrive-UI':UI_CAPABILITY,'Content-Type':'application/octet-stream'},body:chunk});if(!r.ok)throw new Error(await readFetchError(r,'Upload chunk failed'));uploadedBytes=end;const pct=file.size>0?Math.floor((uploadedBytes/file.size)*100):100;busy(el.uploadBtn,true,'Uploading '+pct+'%…','Upload File')}const complete=await api('/api/files/upload/complete',{method:'POST',body:{uploadId}});return complete}catch(error){await api('/api/files/upload/abort',{method:'POST',body:{uploadId}}).catch(()=>{});throw error}}
     async function runCliCommandFromUi(command){const trimmed=String(command||'').trim();if(!trimmed){showToast('Enter a command first.');return}busy(el.runCliBtn,true,'Running…','Run Command');try{const result=await api('/api/cli/run',{method:'POST',body:{command:trimmed}});const out=[];out.push('$ BLANK '+trimmed);if(result&&result.stdout)out.push(String(result.stdout));if(result&&result.stderr)out.push(String(result.stderr));out.push('exitCode: '+String(result&&result.exitCode!==undefined?result.exitCode:'unknown'));if(result&&result.timedOut)out.push('timedOut: true');setCliOutput(out.join('\\n\\n'));showToast(result&&result.exitCode===0?'Command completed.':'Command finished with errors.');await refreshStatus(true);if(s.selectedId)await loadEntry(s.selectedId)}catch(err){setCliOutput(err instanceof Error?err.message:'Command failed.');showToast(err instanceof Error?err.message:'Command failed.')}finally{busy(el.runCliBtn,false,'Running…','Run Command')}}
 
-    async function onCreate(ev){ev.preventDefault();if(!s.status.unlocked){showToast('Unlock vault first.');return}busy(el.createBtn,true,'Saving…','Save Entry');try{const d=await api('/api/entries',{method:'POST',body:createPayload()});el.createForm.reset();switchCreate();await refreshStatus(false);await refreshEntries();showToast('Entry created.');if(d&&d.entry&&d.entry.id)await loadEntry(d.entry.id)}catch(err){showToast(err instanceof Error?err.message:'Create failed.')}finally{busy(el.createBtn,false,'Saving…','Save Entry')}}
-    async function onUpload(ev){ev.preventDefault();if(!s.status.unlocked){showToast('Unlock vault first.');return}const file=el.uploadFile.files&&el.uploadFile.files[0];if(!file){showToast('Choose a file first.');return}busy(el.uploadBtn,true,'Preparing…','Upload File');try{const d=await uploadInChunks(file,String(el.uploadTitle.value||'').trim(),String(el.uploadNotes.value||''));el.uploadForm.reset();await refreshStatus(false);await refreshEntries();showToast('File uploaded ('+formatBytes(file.size)+').');if(d&&d.entry&&d.entry.id)await loadEntry(d.entry.id)}catch(err){showToast(err instanceof Error?err.message:'Upload failed.')}finally{busy(el.uploadBtn,false,'Uploading…','Upload File')}}
+     async function onCreate(ev){ev.preventDefault();if(!s.status.unlocked){showToast('Unlock vault first.');return}busy(el.createBtn,true,'Saving…','Add to archive');try{const d=await api('/api/entries',{method:'POST',body:createPayload()});el.createForm.reset();switchCreate();await refreshStatus(false);await refreshEntries();showToast('Entry created.');if(d&&d.entry&&d.entry.id)await loadEntry(d.entry.id)}catch(err){showToast(err instanceof Error?err.message:'Create failed.')}finally{busy(el.createBtn,false,'Saving…','Add to archive')}}
+     async function onUpload(ev){ev.preventDefault();if(!s.status.unlocked){showToast('Unlock vault first.');return}const file=el.uploadFile.files&&el.uploadFile.files[0];if(!file){showToast('Choose a file first.');return}busy(el.uploadBtn,true,'Preparing…','Encrypt file');try{const d=await uploadInChunks(file,String(el.uploadTitle.value||'').trim(),String(el.uploadNotes.value||''));el.uploadForm.reset();await refreshStatus(false);await refreshEntries();showToast('File uploaded ('+formatBytes(file.size)+').');if(d&&d.entry&&d.entry.id)await loadEntry(d.entry.id)}catch(err){showToast(err instanceof Error?err.message:'Upload failed.')}finally{busy(el.uploadBtn,false,'Uploading…','Encrypt file')}}
     async function onSaveDetail(ev){ev.preventDefault();if(!s.selectedId||!s.selected)return;if(nt(s.selected.type||s.selected.entryType)==='file'){showToast('File metadata is read-only.');return}busy(el.saveDetail,true,'Saving…','Save Changes');try{const d=await api('/api/entries/'+encodeURIComponent(s.selectedId),{method:'PUT',body:updatePayload()});s.selected=d.entry||s.selected;fillDetail(s.selected);await refreshStatus(false);await refreshEntries();showToast('Entry updated.')}catch(err){showToast(err instanceof Error?err.message:'Update failed.')}finally{busy(el.saveDetail,false,'Saving…','Save Changes')}}
     async function onCopyPassword(){if(!s.selected)return;try{await navigator.clipboard.writeText(String(el.detailPassword.value||''));showToast('Password copied.');const origText=el.copyPassword.textContent;el.copyPassword.textContent='Copied!';setTimeout(()=>el.copyPassword.textContent=origText,2000)}catch(err){showToast('Failed to copy.')}}
     async function onDownload(){if(!s.selectedId||!s.selected||nt(s.selected.type||s.selected.entryType)!=='file'){showToast('Select a file entry first.');return}busy(el.downloadFile,true,'Downloading…','Download');try{const r=await fetch('/api/files/'+encodeURIComponent(s.selectedId)+'/download',{method:'GET',headers:{'X-BlankDrive-UI':UI_CAPABILITY}});if(!r.ok){let msg='Download failed ('+r.status+')';try{const p=await r.json();if(p&&p.error)msg=p.error}catch{}throw new Error(msg)}const blob=await r.blob();const fallback=s.selected.originalName||'download.bin';const fileName=parseDownloadName(r.headers.get('content-disposition'),fallback);const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=fileName;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2000);showToast('File download started.')}catch(err){showToast(err instanceof Error?err.message:'Download failed.')}finally{busy(el.downloadFile,false,'Downloading…','Download')}}
