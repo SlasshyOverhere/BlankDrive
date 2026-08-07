@@ -6,6 +6,7 @@ import {
 } from 'node:http';
 import { execFile } from 'node:child_process';
 import { randomBytes, randomUUID } from 'node:crypto';
+import { verifyBackupCode, verifyVault2FACode } from '../cli/vault2fa.js';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -22,6 +23,7 @@ import {
   getStats,
   getVaultIndex,
   getVaultPaths,
+  getVault2FAConfig,
   initVault,
   isUnlocked,
   listEntries,
@@ -30,9 +32,11 @@ import {
   unlock,
   updateEntry,
   updateNoteEntry,
+  useBackupCode,
   vaultExists,
 } from '../storage/vault/index.js';
 import {
+  deleteFileFromCloud,
   downloadFileFromCloud,
   isCloudSyncAvailable,
   type CloudFileChunk,
@@ -67,11 +71,10 @@ const ALLOWED_FILE_EXTENSIONS = new Set([
 ]);
 
 const MAX_FILE_SIZE_BYTES = 100 * 1024 * 1024; // 100 MB
+const MAX_UPLOAD_SESSIONS = 8;
 
 const BRAND_LOGO_CANDIDATES = [
   path.join(process.cwd(), 'assets', 'blankdrive-logo.png'),
-  path.join(process.cwd(), 'desktop-application', 'src-tauri', 'icons', 'blankdrive.png'),
-  path.join(process.cwd(), 'desktop-application', 'src-tauri', 'icons', 'icon.png'),
 ];
 
 const execFileAsync = promisify(execFile);
@@ -257,10 +260,12 @@ function isInvalidUnlockError(error: unknown): boolean {
 export interface WebUiServerOptions {
   host?: string;
   port?: number;
+  capability?: string;
 }
 
 export interface WebUiServerHandle {
   url: string;
+  capability: string;
   close: () => Promise<void>;
 }
 
@@ -350,9 +355,9 @@ function requireLocalhostRequest(req: IncomingMessage): void {
   }
 }
 
-function requireUiWriteGuard(req: IncomingMessage): void {
+function requireUiWriteGuard(req: IncomingMessage, capability: string): void {
   const value = headerValue(req.headers['x-blankdrive-ui']);
-  if (value !== '1') {
+  if (value !== capability) {
     throw new HttpError(403, 'Forbidden request.');
   }
 }
@@ -444,7 +449,7 @@ function ensureValidUrl(value: string | undefined, key: string): void {
 
   try {
     const url = new URL(value);
-    if (!url.protocol.startsWith('http')) {
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
       throw new Error();
     }
   } catch {
@@ -971,12 +976,13 @@ async function handleApiRequest(
   res: ServerResponse,
   requestUrl: URL,
   unlockRateLimiter: UnlockRateLimiter,
+  capability: string,
 ): Promise<void> {
   const method = req.method ?? 'GET';
   const pathname = requestUrl.pathname;
 
-  if (isWriteMethod(method)) {
-    requireUiWriteGuard(req);
+  if (pathname !== '/api/brand/logo') {
+    requireUiWriteGuard(req, capability);
   }
 
   if (pathname === '/api/brand/logo') {
@@ -1014,7 +1020,7 @@ async function handleApiRequest(
       vaultExists: exists,
       unlocked,
       stats: unlocked ? getStats() : null,
-      vaultPath: getVaultPaths().dir,
+      vaultPath: unlocked ? getVaultPaths().dir : undefined,
     });
     return;
   }
@@ -1059,6 +1065,12 @@ async function handleApiRequest(
       trim: false,
       allowEmpty: false,
     });
+    const secondFactorCode = readString(body, 'code', {
+      required: false,
+      maxLength: 32,
+      trim: true,
+      allowEmpty: true,
+    }) || '';
 
     if (!await vaultExists()) {
       throw new HttpError(404, 'Vault not initialized.');
@@ -1069,12 +1081,31 @@ async function handleApiRequest(
 
     try {
       await unlock(password!);
+      const config = getVault2FAConfig();
+      if (config?.enabled) {
+        const normalizedCode = secondFactorCode.replace(/\s/g, '');
+        const backupIndex = config.backupCodes && /^[A-Z0-9]{8}$/i.test(normalizedCode)
+          ? verifyBackupCode(normalizedCode, config.backupCodes)
+          : -1;
+        const valid = backupIndex >= 0 || verifyVault2FACode(normalizedCode, config.secret);
+        if (!valid) {
+          lock();
+          unlockRateLimiter.recordFailure(unlockKey);
+          throw new HttpError(401, 'Invalid password or two-factor code.');
+        }
+        if (backupIndex >= 0) {
+          await useBackupCode(backupIndex);
+        }
+      }
       unlockRateLimiter.reset(unlockKey);
       sendJson(res, 200, {
         unlocked: true,
         stats: getStats(),
       });
     } catch (error) {
+      if (error instanceof HttpError) {
+        throw error;
+      }
       if (isInvalidUnlockError(error)) {
         unlockRateLimiter.recordFailure(unlockKey);
         throw new HttpError(401, 'Invalid password.');
@@ -1224,8 +1255,11 @@ async function handleApiRequest(
     const totalSize = readInteger(body, 'totalSize', {
       required: true,
       min: 0,
-      max: Number.MAX_SAFE_INTEGER,
+      max: MAX_FILE_SIZE_BYTES,
     })!;
+    if (uploadSessions.size >= MAX_UPLOAD_SESSIONS) {
+      throw new HttpError(429, 'Too many active upload sessions.');
+    }
     const requestedChunkSize = readInteger(body, 'chunkSize', {
       required: false,
       min: MIN_UPLOAD_CHUNK_BYTES,
@@ -1390,20 +1424,7 @@ async function handleApiRequest(
       sendMethodNotAllowed(res);
       return;
     }
-
-    ensureUnlocked();
-
-    const body = await readJsonBody(req);
-    const command = readString(body, 'command', {
-      required: true,
-      maxLength: 2048,
-      trim: true,
-      allowEmpty: false,
-    })!;
-    const result = await runCliCommand(command);
-
-    sendJson(res, 200, result);
-    return;
+    throw new HttpError(410, 'Generic CLI execution is disabled in the Web UI.');
   }
 
   const fileDownloadRoute = parseFileDownloadRoute(pathname);
@@ -1418,8 +1439,12 @@ async function handleApiRequest(
     const { fileEntry, fileData } = await resolveFileDataFromVaultOrCloud(id);
 
     const downloadName = normalizeDownloadFileName(fileEntry.originalName);
+    const safeMimeType = /^(text\/html|image\/svg\+xml|application\/javascript|text\/javascript|application\/xml|text\/xml)$/i.test(fileEntry.mimeType || '')
+      ? 'application/octet-stream'
+      : (fileEntry.mimeType || 'application/octet-stream');
     res.writeHead(200, {
-      'content-type': fileEntry.mimeType || 'application/octet-stream',
+      'content-type': safeMimeType,
+      'x-content-type-options': 'nosniff',
       'content-length': String(fileData.byteLength),
       'content-disposition': `attachment; filename="${downloadName}"`,
       'cache-control': 'no-store',
@@ -1439,6 +1464,9 @@ async function handleApiRequest(
     const { id } = fileStreamRoute;
     const { fileEntry, fileData } = await resolveFileDataFromVaultOrCloud(id);
     const totalSize = fileData.byteLength;
+    const safeMimeType = /^(text\/html|image\/svg\+xml|application\/javascript|text\/javascript)$/i.test(fileEntry.mimeType || '')
+      ? 'application/octet-stream'
+      : (fileEntry.mimeType || 'application/octet-stream');
     const downloadName = normalizeDownloadFileName(fileEntry.originalName);
     const rangeHeader = headerValue(req.headers.range);
     const range = parseByteRange(rangeHeader, totalSize);
@@ -1447,7 +1475,8 @@ async function handleApiRequest(
       const { start, end } = range;
       const chunk = fileData.subarray(start, end + 1);
       res.writeHead(206, {
-        'content-type': fileEntry.mimeType || 'application/octet-stream',
+        'content-type': safeMimeType,
+        'x-content-type-options': 'nosniff',
         'content-length': String(chunk.byteLength),
         'content-range': `bytes ${start}-${end}/${totalSize}`,
         'accept-ranges': 'bytes',
@@ -1459,7 +1488,8 @@ async function handleApiRequest(
     }
 
     res.writeHead(200, {
-      'content-type': fileEntry.mimeType || 'application/octet-stream',
+      'content-type': safeMimeType,
+      'x-content-type-options': 'nosniff',
       'content-length': String(totalSize),
       'accept-ranges': 'bytes',
       'content-disposition': `inline; filename="${downloadName}"`,
@@ -1496,6 +1526,15 @@ async function handleApiRequest(
     }
 
     if (method === 'DELETE') {
+      const indexEntry = getVaultIndex()?.entries[id];
+      if (entryType === 'file' && indexEntry?.cloudChunks?.length) {
+        try {
+          await deleteFileFromCloud(id, indexEntry.cloudChunks);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Cloud deletion failed.';
+          throw new HttpError(409, `Cloud file deletion failed; local entry retained. ${message}`);
+        }
+      }
       const deleted = await deleteEntry(id);
       if (!deleted) {
         sendJson(res, 404, { error: 'Entry not found.' });
@@ -1646,6 +1685,7 @@ async function requestHandler(
   req: IncomingMessage,
   res: ServerResponse,
   unlockRateLimiter: UnlockRateLimiter,
+  capability: string,
 ): Promise<void> {
   try {
     const method = req.method ?? 'GET';
@@ -1677,7 +1717,7 @@ async function requestHandler(
     }
 
     if (requestUrl.pathname.startsWith('/api/')) {
-      await handleApiRequest(req, res, requestUrl, unlockRateLimiter);
+      await handleApiRequest(req, res, requestUrl, unlockRateLimiter, capability);
       return;
     }
 
@@ -1739,8 +1779,9 @@ export async function startWebUiServer(options: WebUiServerOptions = {}): Promis
   const host = DEFAULT_HOST;
   const port = options.port ?? DEFAULT_PORT;
   const unlockRateLimiter = createUnlockRateLimiter();
+  const capability = options.capability || randomBytes(32).toString('hex');
   const server = createServer((req, res) => {
-    void requestHandler(req, res, unlockRateLimiter);
+    void requestHandler(req, res, unlockRateLimiter, capability);
   });
 
   await new Promise<void>((resolve, reject) => {
@@ -1766,6 +1807,7 @@ export async function startWebUiServer(options: WebUiServerOptions = {}): Promis
 
   return {
     url: `http://${host}:${address.port}`,
+    capability,
     close: async (): Promise<void> => closeServer(server),
   };
 }

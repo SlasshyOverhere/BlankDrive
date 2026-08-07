@@ -203,9 +203,10 @@ export async function downloadCommand(query?: string): Promise<void> {
   console.log(chalk.gray(`  Type: ${fileEntry.mimeType}`));
   console.log('');
 
+  const safeName = path.basename(fileEntry.originalName).replace(/[\u0000-\u001f<>:"/\\|?*]/g, '_') || 'download.bin';
   // Get download location
   const defaultDir = path.join(os.homedir(), 'Downloads');
-  const defaultPath = path.join(defaultDir, fileEntry.originalName);
+  const defaultPath = path.join(defaultDir, safeName);
 
   console.log(chalk.gray('  Tip: Type "browse" to open folder picker\n'));
 
@@ -222,7 +223,7 @@ export async function downloadCommand(query?: string): Promise<void> {
   if (outputPath.toLowerCase() === 'browse' || outputPath.toLowerCase() === 'select') {
     const selectedFolder = await openFolderPicker();
     if (selectedFolder) {
-      outputPath = path.join(selectedFolder, fileEntry.originalName);
+      outputPath = path.join(selectedFolder, safeName);
       console.log(chalk.green(`  Selected: ${outputPath}`));
     } else {
       console.log(chalk.gray('\n  Download cancelled.\n'));
@@ -234,13 +235,13 @@ export async function downloadCommand(query?: string): Promise<void> {
   try {
     const pathStats = await fs.stat(outputPath);
     if (pathStats.isDirectory()) {
-      outputPath = path.join(outputPath, fileEntry.originalName);
+      outputPath = path.join(outputPath, safeName);
       console.log(chalk.gray(`  Saving as: ${outputPath}`));
     }
   } catch {
     // Path doesn't exist yet - check if it looks like a directory (ends with slash or no extension)
     if (outputPath.endsWith(path.sep) || outputPath.endsWith('/')) {
-      outputPath = path.join(outputPath, fileEntry.originalName);
+      outputPath = path.join(outputPath, safeName);
     }
   }
 

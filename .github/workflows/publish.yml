@@ -7,23 +7,19 @@ on:
       - 'package.json'
       - 'package-lock.json'
   workflow_dispatch:
-    inputs:
-      include_desktop:
-        description: 'Build and upload desktop (Tauri) artifacts'
-        required: false
-        default: true
-        type: boolean
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   check-and-publish:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4 # pin to a full SHA before production release
         with:
           fetch-depth: 0
 
@@ -71,7 +67,7 @@ jobs:
 
       - name: Setup Node.js
         if: steps.work.outputs.required == 'true'
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v4 # pin to a full SHA before production release
         with:
           node-version: '22'
           registry-url: 'https://registry.npmjs.org'
@@ -163,7 +159,7 @@ jobs:
 
       - name: Create GitHub Release
         if: steps.check_release.outputs.exists == 'false'
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v1 # pin to a full SHA before production release
         with:
           tag_name: v${{ steps.package.outputs.version }}
           name: v${{ steps.package.outputs.version }}
@@ -227,54 +223,4 @@ jobs:
               echo "- npm dist-tag latest: \`${NPM_LATEST}\`"
             fi
           } >> "${GITHUB_STEP_SUMMARY}"
-
-  desktop-windows:
-    name: Desktop Windows Release
-    runs-on: windows-latest
-    needs: check-and-publish
-    if: needs.check-and-publish.result == 'success' && github.event.inputs.include_desktop != 'false'
-    permissions:
-      contents: write
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'npm'
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install root dependencies
-        run: npm ci
-
-      - name: Install desktop dependencies
-        run: npm --prefix desktop-application ci
-
-      - name: Build desktop bundles (Tauri)
-        run: npm --prefix desktop-application run tauri:build
-
-      - name: Resolve release tag
-        id: package
-        shell: bash
-        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
-
-      - name: Upload desktop assets to release
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          TAG="v${{ steps.package.outputs.version }}"
-          shopt -s nullglob globstar
-          files=(desktop-application/src-tauri/target/release/bundle/**/*.exe desktop-application/src-tauri/target/release/bundle/**/*.msi)
-          if [ ${#files[@]} -eq 0 ]; then
-            echo "No desktop artifacts found to upload." >&2
-            exit 1
-          fi
-          gh release upload "$TAG" "${files[@]}" --clobber
 

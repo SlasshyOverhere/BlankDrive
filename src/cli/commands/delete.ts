@@ -204,15 +204,15 @@ export async function deleteCommand(
         {
           type: 'confirm',
           name: 'proceedLocal',
-          message: 'Delete local entry anyway? (Cloud files may remain)',
+          message: 'Cloud deletion failed. Keep the local entry and retry later?',
           default: true,
         },
       ]);
 
-      if (!proceedLocal) {
-        console.log(chalk.gray('\n  Cancelled.\n'));
-        return;
+      if (proceedLocal) {
+        console.log(chalk.gray('\n  Cancelled; local entry retained for retry.\n'));
       }
+      return;
     }
 
     // Delete local entry

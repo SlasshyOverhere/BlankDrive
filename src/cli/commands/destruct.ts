@@ -13,6 +13,8 @@ import {
 import { initializeKeyManager } from '../../crypto/index.js';
 import {
   isAuthenticated,
+  authenticateDrive,
+  getCloudStorageMode,
   listAppDataFiles,
   deleteFromAppData,
   runParallel,
@@ -65,9 +67,21 @@ export async function destructCommand(): Promise<void> {
   try {
     // Step 1: Delete cloud data
     if (await isAuthenticated()) {
-      spinner.text = 'Deleting cloud data...';
+      spinner.text = 'Authenticating cloud storage...';
       try {
-        const cloudFiles = await listAppDataFiles();
+        await authenticateDrive();
+        spinner.text = 'Deleting cloud data...';
+        const cloudMode = await getCloudStorageMode();
+        const listedFiles = await listAppDataFiles();
+        const cloudFiles = cloudMode === 'public'
+          ? listedFiles
+          : listedFiles.filter((file) => {
+            const name = file.name || '';
+            return name === 'slasshy_vault_index_backup.enc'
+              || name === 'slasshy_vault_index.json'
+              || name === 'slasshy_duress.hash'
+              || /^slasshy_[0-9a-f-]+_chunk_\d+\.bin$/i.test(name);
+          });
 
         // Optimize: Use parallel deletion for network I/O speedup
         const deleteTasks = cloudFiles
@@ -78,10 +92,10 @@ export async function destructCommand(): Promise<void> {
 
         await runParallel(deleteTasks, PARALLEL_LIMIT);
 
-        spinner.text = `Deleted ${cloudFiles.length} cloud files`;
+        spinner.text = `Deleted ${cloudFiles.length} BlankDrive cloud files`;
       } catch (error) {
-        // Continue even if cloud deletion fails
-        spinner.text = 'Could not delete cloud data (continuing...)';
+        spinner.fail('Cloud deletion failed; local data was not removed.');
+        throw new Error('Cloud deletion did not complete. Refusing local destruction.');
       }
     }
 

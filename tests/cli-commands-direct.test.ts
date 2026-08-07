@@ -170,7 +170,6 @@ import { addCommand } from '../src/cli/commands/add.js';
 import { auditCommand, checkPasswordExpiry } from '../src/cli/commands/audit.js';
 import { authCommand } from '../src/cli/commands/auth.js';
 import { deleteCommand } from '../src/cli/commands/delete.js';
-import { desktopCommand, downloadDesktopRelease, getDesktopReleaseInfo, isNewerVersion, launchDesktopInstaller } from '../src/cli/commands/desktop.js';
 import { destructCommand } from '../src/cli/commands/destruct.js';
 import { downloadCommand } from '../src/cli/commands/download.js';
 import { editCommand } from '../src/cli/commands/edit.js';
@@ -278,24 +277,8 @@ describe('direct CLI command coverage', () => {
     expect(vault.deleteEntry).toHaveBeenCalledWith('e1');
   });
 
-  it('covers desktop version selection and download cancellation/error', async () => {
-    expect(isNewerVersion('v1.2.0', '1.1.9')).toBe(true);
-    expect(isNewerVersion('1.2.0', 'v1.2.0')).toBe(false);
-
-    const response = { statusCode: 200, headers: {}, on: (event: string, cb: (chunk?: Buffer) => void) => { if (event === 'data') cb(Buffer.from(JSON.stringify({ tag_name: 'v1.0.0', assets: [{ name: 'BlankDrive-x64.exe', size: 3, browser_download_url: 'https://github.com/SlasshyOverhere/BlankDrive/releases/download/v1.0.0/BlankDrive-x64.exe' }] }))); if (event === 'end') cb(); return response; } };
-    const requestWithRelease = () => ({ on: vi.fn(), setTimeout: vi.fn(), end: vi.fn() });
-    httpsMock.request
-      .mockImplementationOnce((_options: unknown, cb: (res: unknown) => void) => { cb(response); return requestWithRelease(); })
-      .mockImplementationOnce((_options: unknown, cb: (res: unknown) => void) => { cb(response); return requestWithRelease(); });
-    await expect(getDesktopReleaseInfo()).resolves.toMatchObject({ assetName: 'BlankDrive-x64.exe' });
-
-    fsPromises.stat.mockResolvedValue({ isDirectory: () => false, isFile: () => true });
-    prompt.mockResolvedValue({ overwrite: false });
-    Object.defineProperty(process.stdin, 'isTTY', { configurable: true, value: true });
-    Object.defineProperty(process.stdout, 'isTTY', { configurable: true, value: true });
-    await expect(downloadDesktopRelease({ output: '/tmp/app.exe' })).rejects.toThrow('cancelled');
-    httpsMock.request.mockImplementationOnce((_options: unknown, cb: (res: unknown) => void) => { cb(response); return requestWithRelease(); });
-    await expect(downloadDesktopRelease({ quiet: true, install: true })).rejects.toThrow('signature verification');
+  it('keeps desktop installer functionality removed', async () => {
+    await expect(import('../src/cli/commands/desktop.js')).rejects.toThrow();
   });
 
   it('covers destruct confirmation cancellation and cloud protection', async () => {

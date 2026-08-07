@@ -6,7 +6,7 @@ const commands = vi.hoisted(() => ({
   noteCommand: vi.fn(), auditCommand: vi.fn(), statusCommand: vi.fn(), lockCommand: vi.fn(),
   authCommand: vi.fn(), uploadCommand: vi.fn(), downloadCommand: vi.fn(), destructCommand: vi.fn(),
   generateCommand: vi.fn(), totpCommand: vi.fn(), syncCommand: vi.fn(), settingsCommand: vi.fn(),
-  webCommand: vi.fn(), desktopCommand: vi.fn(), updateCommand: vi.fn(),
+  webCommand: vi.fn(), updateCommand: vi.fn(),
 }));
 const fs = vi.hoisted(() => ({
   readFile: vi.fn(), mkdir: vi.fn().mockResolvedValue(undefined), writeFile: vi.fn().mockResolvedValue(undefined),
@@ -100,7 +100,7 @@ beforeEach(() => {
   commands.downloadCommand.mockResolvedValue(undefined); commands.destructCommand.mockResolvedValue(undefined);
   commands.generateCommand.mockResolvedValue(undefined); commands.totpCommand.mockResolvedValue(undefined);
   commands.syncCommand.mockResolvedValue(undefined); commands.settingsCommand.mockResolvedValue(undefined);
-  commands.webCommand.mockResolvedValue(undefined); commands.desktopCommand.mockResolvedValue(undefined);
+  commands.webCommand.mockResolvedValue(undefined);
   commands.updateCommand.mockResolvedValue(undefined);
   fs.readFile.mockRejectedValue(new Error('history missing'));
   vi.spyOn(console, 'clear').mockImplementation(() => undefined);
@@ -135,8 +135,8 @@ describe('shell command dispatch and terminal helpers', () => {
       'audit -a', 'rm title -f', 'up file.txt', 'dl title', 'autolock nope', 'autolock 0',
       'autolock 2', 'autolock', 'theme ocean', 'theme unknown', 'theme', 'history', 'log 4',
       'auth --setup -l', 'sync --force --status --conflicts', 'settings --storage hidden --folder vault-data',
-      'ui --open --port 4310', 'desktop -r v1 --output x --asset linux --force --install -y',
-      'update -c -i -r v2 --current-version v1 --asset a --output o -f -y --json --scheduled',
+      'ui --open --port 4310',
+      'update -c -i --current-version v1 -y --json --scheduled',
       'status', 'lock', 'destruct', 'version', 'help --list', 'clear', 'wat', '', 'exit',
     ]);
     const exit = mockExit();
@@ -148,8 +148,7 @@ describe('shell command dispatch and terminal helpers', () => {
     expect(commands.noteCommand).toHaveBeenCalledWith('add', 'my note');
     expect(commands.totpCommand).toHaveBeenCalledWith('view', 'token -c', { copy: true });
     expect(commands.totpCommand).toHaveBeenCalledWith('add', 'token', {});
-    expect(commands.desktopCommand).toHaveBeenCalledWith({ release: 'v1', output: 'x', asset: 'linux', force: true, install: true, nonInteractive: true });
-    expect(commands.updateCommand).toHaveBeenCalledWith({ check: true, install: true, release: 'v2', currentVersion: 'v1', asset: 'a', output: 'o', force: true, yes: true, json: true, scheduled: true });
+    expect(commands.updateCommand).toHaveBeenCalledWith({ check: true, install: true, currentVersion: 'v1', yes: true, json: true, scheduled: true });
     expect(console.clear).toHaveBeenCalled();
     exit.mockRestore();
   });
