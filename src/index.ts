@@ -261,8 +261,9 @@ program
 // Auth command
 program
   .command('auth')
-  .description('Authenticate with Google Drive via OAuth (your own client credentials)')
+  .description('Authenticate with Google Drive via OAuth')
   .option('--setup', 'Set or update Google OAuth Client ID/Secret')
+  .option('--backend-url <url>', 'Use a custom OAuth backend URL, or empty for local OAuth')
   .option('-l, --logout', 'Disconnect from Google Drive')
   .action(async (options) => {
     await authCommand(options);

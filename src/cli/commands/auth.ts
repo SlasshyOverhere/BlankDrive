@@ -6,6 +6,8 @@ import {
   setGoogleOAuthCredentials,
   getGoogleOAuthCredentials,
   isGoogleOAuthConfigured,
+  getOAuthBackendUrl,
+  setOAuthBackendUrl,
   getCloudStorageMode,
   isCloudStorageModeConfigured,
   getPublicContentFolderName,
@@ -67,6 +69,7 @@ async function openBrowser(url: string): Promise<void> {
 export async function authCommand(options?: {
   setup?: boolean;
   logout?: boolean;
+  backendUrl?: string;
 }): Promise<void> {
   console.log(chalk.bold('\n  Google Drive Authentication\n'));
 
@@ -110,13 +113,18 @@ export async function authCommand(options?: {
     }
   }
 
-  await authenticateGoogleDrive(options?.setup === true);
+  await authenticateGoogleDrive(options?.setup === true, options?.backendUrl);
 }
 
 /**
  * Authenticate with Google Drive
  */
-async function authenticateGoogleDrive(forceSetup: boolean = false): Promise<void> {
+async function authenticateGoogleDrive(forceSetup: boolean = false, backendUrl?: string): Promise<void> {
+  if (backendUrl !== undefined) {
+    await setOAuthBackendUrl(backendUrl);
+    console.log(chalk.green(`\n  OAuth backend setting saved: ${backendUrl.trim() || 'local OAuth only'}\n`));
+  }
+
   if (!await isCloudStorageModeConfigured()) {
     const selectedMode = await promptCloudStorageMode();
     await setCloudStorageMode(selectedMode);
@@ -137,8 +145,8 @@ async function authenticateGoogleDrive(forceSetup: boolean = false): Promise<voi
     console.log(chalk.green(`\n  Public folder saved: BlankDrive/${folderName}\n`));
   }
 
-  // When using backend OAuth service, skip credential prompts
-  const usingBackend = !!process.env.BLANKDRIVE_OAUTH_BACKEND_URL; // Default to backend mode
+  const resolvedBackendUrl = await getOAuthBackendUrl();
+  const usingBackend = resolvedBackendUrl !== null;
 
   if (!usingBackend || forceSetup) {
     // Only prompt for credentials if NOT using backend OR user explicitly requested setup
