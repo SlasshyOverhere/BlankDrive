@@ -6,6 +6,7 @@ const vaultMocks = vi.hoisted(() => ({
   isUnlocked: vi.fn(),
   getStats: vi.fn(),
   getVaultPaths: vi.fn(),
+  getVault2FAConfig: vi.fn().mockReturnValue(undefined),
   addEntry: vi.fn(),
   addNoteEntry: vi.fn(),
   addFileEntry: vi.fn(),
@@ -61,7 +62,7 @@ describe('Web UI unlock rate limiting', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-BlankDrive-UI': '1',
+        'X-BlankDrive-UI': serverHandle.capability,
       },
       body: JSON.stringify(body),
     });
