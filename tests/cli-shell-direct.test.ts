@@ -22,7 +22,6 @@ const commands = vi.hoisted(() => ({
   syncCommand: vi.fn().mockResolvedValue(undefined),
   settingsCommand: vi.fn().mockResolvedValue(undefined),
   webCommand: vi.fn().mockResolvedValue(undefined),
-  desktopCommand: vi.fn().mockResolvedValue(undefined),
   updateCommand: vi.fn().mockResolvedValue(undefined),
 }));
 const fs = vi.hoisted(() => ({ readFile: vi.fn().mockRejectedValue(new Error('missing')), mkdir: vi.fn(), writeFile: vi.fn() }));

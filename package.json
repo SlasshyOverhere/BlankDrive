@@ -14,6 +14,7 @@
     "dev": "tsx src/index.ts",
     "BLANK": "tsx src/index.ts",
     "test": "vitest",
+    "coverage": "vitest run --coverage",
     "lint": "eslint src --ext .ts",
     "prepublishOnly": "npm run build"
   },
@@ -69,6 +70,7 @@
     "@types/zxcvbn": "^4.4.5",
     "@typescript-eslint/eslint-plugin": "^8.56.0",
     "@typescript-eslint/parser": "^8.56.0",
+    "@vitest/coverage-v8": "^4.1.10",
     "eslint": "^10.0.1",
     "tsx": "^4.7.0",
     "typescript": "^5.3.3",

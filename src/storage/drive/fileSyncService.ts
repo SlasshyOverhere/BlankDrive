@@ -107,12 +107,12 @@ export async function uploadFileToCloud(
   });
 
   const chunkSizes = await Promise.all(
-    chunkPaths.map(async (chunkPath) => {
+    chunkPaths.map(async (chunkPath, index) => {
       try {
         const stats = await fs.stat(chunkPath);
         return stats.size;
       } catch {
-        return 0;
+        throw new Error(`Missing encrypted chunk ${index + 1}/${chunkCount}.`);
       }
     })
   );

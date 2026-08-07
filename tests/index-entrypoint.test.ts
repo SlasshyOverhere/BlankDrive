@@ -5,7 +5,7 @@ const mocks = vi.hoisted(() => {
     'initCommand', 'addCommand', 'getCommand', 'listCommand', 'deleteCommand', 'editCommand',
     'favoriteCommand', 'listFavoritesCommand', 'noteCommand', 'auditCommand', 'statusCommand',
     'lockCommand', 'authCommand', 'uploadCommand', 'downloadCommand', 'destructCommand',
-    'generateCommand', 'settingsCommand', 'webCommand', 'desktopCommand', 'updateCommand',
+    'generateCommand', 'settingsCommand', 'webCommand', 'updateCommand',
     'runScheduledUpdateCheckPrompt', 'totpCommand', 'syncCommand', 'showSyncHelp', 'quickGenerate',
   ] as const;
   return Object.fromEntries(names.map((name) => [name, vi.fn().mockResolvedValue(undefined)]));
@@ -42,13 +42,11 @@ describe('CLI entrypoint', () => {
     await runCli('get', 'search', '--copy', '--show-password');
     await runCli('list', '--filter', 'x', '--type', 'passwords', '--category', 'work');
     await runCli('init', '--drive', '--restore');
-    await runCli('desktop', '--release', 'v1', '--output', '/tmp/x', '--asset', 'a.exe', '--force', '--install', '--yes');
-    await runCli('update', '--check', '--install', '--release', 'v1', '--current-version', '1.0.0', '--asset', 'a.exe', '--output', '/tmp/x', '--force', '--yes', '--json', '--scheduled');
+    await runCli('update', '--check', '--install', '--current-version', '1.0.0', '--yes', '--json', '--scheduled');
     expect(mocks.generateCommand).toHaveBeenCalled();
     expect(mocks.getCommand).toHaveBeenCalledWith('search', { copy: true, showPassword: true });
     expect(mocks.listCommand).toHaveBeenCalledWith({ filter: 'x', type: 'passwords', category: 'work' });
     expect(mocks.initCommand).toHaveBeenCalledWith({ drive: true, restore: true });
-    expect(mocks.desktopCommand).toHaveBeenCalled();
     expect(mocks.updateCommand).toHaveBeenCalled();
   });
 

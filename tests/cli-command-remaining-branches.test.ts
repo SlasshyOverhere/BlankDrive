@@ -62,7 +62,6 @@ vi.mock('../src/cli/passwordStrength.js', () => ({ analyzePasswordStrength: vi.f
 import { auditCommand } from '../src/cli/commands/audit.js';
 import { authCommand } from '../src/cli/commands/auth.js';
 import { deleteCommand } from '../src/cli/commands/delete.js';
-import { desktopCommand, downloadDesktopRelease, getDesktopReleaseInfo, launchDesktopInstaller } from '../src/cli/commands/desktop.js';
 import { downloadCommand } from '../src/cli/commands/download.js';
 import { editCommand } from '../src/cli/commands/edit.js';
 import { favoriteCommand, listFavoritesCommand } from '../src/cli/commands/favorite.js';
@@ -158,22 +157,9 @@ describe('remaining CLI command error, cancellation, and empty branches', () => 
     expect(spinner.fail).toHaveBeenCalled();
   });
 
-  it('covers desktop metadata, redirects, overwrite cancellation, and installer errors', async () => {
-    https.request.mockImplementationOnce((_o: unknown, cb: any) => { cb(response({ tag_name: 'v1', assets: [] })); return req(); }); await expect(getDesktopReleaseInfo()).rejects.toThrow('No .exe');
-    https.request.mockImplementationOnce((_o: unknown, cb: any) => { cb(response('not-json')); return req(); }); await expect(getDesktopReleaseInfo()).rejects.toThrow('Invalid JSON');
-    https.request.mockImplementationOnce((_o: unknown, cb: any) => { cb(response({ message: 'not found' }, 404)); return req(); }); https.request.mockImplementationOnce((_o: unknown, cb: any) => { cb(response({ message: 'not found' }, 404)); return req(); }); await expect(getDesktopReleaseInfo('2')).rejects.toThrow('not found');
-    const release = { tag_name: 'v2', assets: [{ name: 'BlankDrive-x64.exe', size: 1, browser_download_url: 'https://github.com/SlasshyOverhere/BlankDrive/app.exe' }] };
-    https.request.mockImplementationOnce((_o: unknown, cb: any) => { cb(response(release)); return req(); }); fs.stat.mockResolvedValue({ isDirectory: () => false, isFile: () => true }); prompt.mockImplementationOnce(async () => ({ overwrite: false }));
-    const oldInTTY = Object.getOwnPropertyDescriptor(process.stdin, 'isTTY'); const oldOutTTY = Object.getOwnPropertyDescriptor(process.stdout, 'isTTY');
-    Object.defineProperty(process.stdin, 'isTTY', { configurable: true, value: true }); Object.defineProperty(process.stdout, 'isTTY', { configurable: true, value: true });
-    await expect(downloadDesktopRelease({ output: '/tmp/x.exe' })).rejects.toThrow('cancelled');
-    if (oldInTTY) Object.defineProperty(process.stdin, 'isTTY', oldInTTY); else delete (process.stdin as any).isTTY;
-    if (oldOutTTY) Object.defineProperty(process.stdout, 'isTTY', oldOutTTY); else delete (process.stdout as any).isTTY;
-    https.request.mockImplementationOnce((_o: unknown, cb: any) => { cb(response(release)); return req(); }); await expect(downloadDesktopRelease({ install: true })).rejects.toThrow('signature verification');
-    https.request.mockImplementationOnce((_o: unknown, cb: any) => { cb(response(release)); return req(); });
-    https.get.mockImplementationOnce((_o: unknown, cb: any) => { cb({ statusCode: 302, headers: { location: 'https://evil.example/x' }, resume: vi.fn() }); return req(); }); await expect(downloadDesktopRelease({ output: '/tmp/x.exe', force: true, quiet: true })).rejects.toThrow('untrusted');
-    spawn.mockReturnValueOnce({ once: vi.fn((event: string, cb: (e?: Error) => void) => event === 'error' && cb(new Error('spawn failed'))), unref: vi.fn() }); await expect(launchDesktopInstaller('/tmp/setup')).rejects.toThrow('spawn failed');
-    https.request.mockImplementationOnce(() => { const r = req(); r.on.mockImplementation((event: string, cb: (e: Error) => void) => { if (event === 'error') cb(new Error('rate limited')); return r; }); return r; }); await expect(desktopCommand({ quiet: true })).rejects.toThrow('rate limited');
+  it('keeps the CLI focused on web and vault workflows', async () => {
+    await expect(import('../src/cli/commands/desktop.js')).rejects.toThrow();
+    expect(drive.isCloudSyncAvailable).toBeDefined();
   });
 
   it('covers download empty, invalid, browse cancellation, unavailable cloud, and stream errors', async () => {

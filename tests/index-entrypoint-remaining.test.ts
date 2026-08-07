@@ -11,7 +11,7 @@ vi.mock('../src/cli/commands/index.js', () => ({
   deleteCommand: vi.fn(), editCommand: vi.fn(), favoriteCommand: vi.fn(), listFavoritesCommand: vi.fn(),
   noteCommand: vi.fn(), auditCommand: vi.fn(), statusCommand: vi.fn(), lockCommand: vi.fn(),
   authCommand: vi.fn(), uploadCommand: vi.fn(), downloadCommand: vi.fn(), destructCommand: vi.fn(),
-  generateCommand: vi.fn(), settingsCommand: vi.fn(), webCommand: vi.fn(), desktopCommand: vi.fn(),
+  generateCommand: vi.fn(), settingsCommand: vi.fn(), webCommand: vi.fn(),
   updateCommand: vi.fn(), runScheduledUpdateCheckPrompt: mocks.runScheduledUpdateCheckPrompt,
 }));
 vi.mock('../src/cli/shell.js', () => ({ startShell: mocks.startShell }));

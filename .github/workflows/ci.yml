@@ -1,5 +1,8 @@
 name: CI
 
+permissions:
+  contents: read
+
 on:
   push:
     branches: [main]
@@ -34,5 +37,9 @@ jobs:
       - name: Run linter
         run: npm run lint
 
-      - name: Run tests
-        run: npm run test -- --run
+      - name: Run tests with coverage
+        run: npm run coverage
+
+
+      - name: Validate OAuth backend dependencies
+        run: npm --prefix backend_oauth ci --ignore-scripts

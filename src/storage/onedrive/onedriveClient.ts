@@ -26,6 +26,7 @@ const APP_FOLDER_NAME = 'SlasshyVault';
 let accessToken: string | null = null;
 let refreshToken: string | null = null;
 let tokenExpiry: number = 0;
+let refreshPromise: Promise<boolean> | null = null;
 
 interface OneDriveConfig {
   serverUrl: string;
@@ -178,6 +179,14 @@ async function loadTokens(): Promise<TokenData | null> {
  * Refresh access token via backend server
  */
 async function refreshAccessToken(): Promise<boolean> {
+  if (refreshPromise) return refreshPromise;
+  refreshPromise = refreshAccessTokenInternal().finally(() => {
+    refreshPromise = null;
+  });
+  return refreshPromise;
+}
+
+async function refreshAccessTokenInternal(): Promise<boolean> {
   if (!refreshToken) {
     return false;
   }
@@ -342,21 +351,12 @@ export async function pollForOneDriveTokens(
   }
   const normalizedServerUrl = normalizeServerUrl(serverUrl);
   const pollBaseUrl = `${normalizedServerUrl}/onedrive/poll/${encodeURIComponent(sessionId)}`;
-  let useLegacyQueryPoll = false;
-
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    let response: Response;
-    if (useLegacyQueryPoll) {
-      response = await fetch(`${pollBaseUrl}?encryptionKey=${encodeURIComponent(encryptionKey)}`);
-    } else {
-      response = await fetch(pollBaseUrl, {
-        headers: { 'x-blankdrive-encryption-key': encryptionKey },
-      });
-
-      if (response.status === 400 || response.status === 404 || response.status === 405) {
-        useLegacyQueryPoll = true;
-        response = await fetch(`${pollBaseUrl}?encryptionKey=${encodeURIComponent(encryptionKey)}`);
-      }
+    const response = await fetch(pollBaseUrl, {
+      headers: { 'x-blankdrive-encryption-key': encryptionKey },
+    });
+    if (response.status === 400 || response.status === 404 || response.status === 405) {
+      throw new Error('OneDrive OAuth backend does not support secure token polling.');
     }
 
     if (!response.ok) {

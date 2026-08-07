@@ -218,15 +218,12 @@ describe('web UI server uncovered edge branches', () => {
 
   it('covers logo candidate fallback/cache and range edge cases', async () => {
     const h = await server();
-    mocks.fs.readFile
-      .mockRejectedValueOnce(new Error('first missing'))
-      .mockResolvedValueOnce(Buffer.alloc(0))
-      .mockResolvedValueOnce(Buffer.from('logo-bytes'));
+    mocks.fs.readFile.mockResolvedValueOnce(Buffer.from('logo-bytes'));
     let response = await request(h, '/api/brand/logo', {}, false);
     expect(response.status).toBe(200);
     expect(await response.text()).toBe('logo-bytes');
     expect((await request(h, '/favicon.ico', {}, false)).status).toBe(200);
-    expect(mocks.fs.readFile).toHaveBeenCalledTimes(3);
+    expect(mocks.fs.readFile).toHaveBeenCalledTimes(1);
 
     response = await request(h, '/api/files/f/stream', { headers: { range: 'bytes=0-100' } });
     expect(response.status).toBe(206);

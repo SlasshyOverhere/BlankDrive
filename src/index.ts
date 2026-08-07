@@ -23,7 +23,6 @@ import {
   generateCommand,
   settingsCommand,
   webCommand,
-  desktopCommand,
   updateCommand,
   runScheduledUpdateCheckPrompt,
 } from './cli/commands/index.js';
@@ -46,17 +45,12 @@ const banner = `
             Secure Vault Console
 `;
 
-const desktopCallout = `
-${chalk.bgCyan.black(' DESKTOP RELEASE LIVE ')} ${chalk.white('Install from CLI:')} ${chalk.cyan('BLANK desktop --install')}
-${chalk.gray('Download only:')} ${chalk.cyan('BLANK desktop')} ${chalk.gray('| Check updates:')} ${chalk.cyan('BLANK update --check')}
-`;
-
 program
   .name('BLANK')
   .description('Military-grade secure storage with steganography & Google Drive sync')
   .version(VERSION, '-v, --version', 'Show version number')
   .addHelpText('before', chalk.cyan(banner))
-  .addHelpText('after', desktopCallout);
+  .addHelpText('after', chalk.gray('Run "BLANK web --open" to launch the local Web UI.'));
 
 // Init command
 program
@@ -198,39 +192,12 @@ program
     await webCommand(options);
   });
 
-// Desktop installer command
-program
-  .command('desktop')
-  .description('Download BlankDrive desktop installer (.exe) from GitHub releases')
-  .option('-r, --release <tag>', 'Release tag (default: latest)')
-  .option('--version <tag>', 'Alias for --release')
-  .option('-o, --output <path>', 'Output file path or destination directory')
-  .option('-a, --asset <name>', 'Select a specific .exe asset name')
-  .option('-f, --force', 'Overwrite existing output file')
-  .option('-i, --install', 'Launch installer automatically after download')
-  .option('-y, --yes', 'Non-interactive mode')
-  .action(async (options) => {
-    await desktopCommand({
-      release: options.release || options.version,
-      output: options.output,
-      asset: options.asset,
-      force: options.force,
-      install: options.install,
-      nonInteractive: options.yes,
-    });
-  });
-
 // Update command
 program
   .command('update')
   .description('Check and install CLI updates from npm')
   .option('-c, --check', 'Check for updates only')
-  .option('-i, --install', 'Download and launch installer')
-  .option('-r, --release <tag>', 'Specific release tag')
-  .option('--version <tag>', 'Alias for --release')
-  .option('-a, --asset <name>', 'Specific .exe asset')
-  .option('-o, --output <path>', 'Output file path or destination directory')
-  .option('-f, --force', 'Overwrite existing output file')
+  .option('-i, --install', 'Install the latest CLI package')
   .option('-y, --yes', 'Non-interactive mode')
   .option('--current-version <version>', 'Override current version used for update checks')
   .option('--json', 'Print machine-readable JSON')
@@ -239,11 +206,7 @@ program
     await updateCommand({
       check: options.check,
       install: options.install,
-      release: options.release || options.version,
       currentVersion: options.currentVersion,
-      asset: options.asset,
-      output: options.output,
-      force: options.force,
       yes: options.yes,
       json: options.json,
       scheduled: options.scheduled,

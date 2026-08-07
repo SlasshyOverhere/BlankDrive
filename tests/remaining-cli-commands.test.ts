@@ -134,7 +134,6 @@ vi.mock('../src/cli/totp.js', () => totp);
 vi.mock('../src/sync/index.js', () => sync);
 
 import { deleteCommand } from '../src/cli/commands/delete.js';
-import { getDesktopReleaseInfo, downloadDesktopRelease, desktopCommand, launchDesktopInstaller } from '../src/cli/commands/desktop.js';
 import { destructCommand } from '../src/cli/commands/destruct.js';
 import { editCommand } from '../src/cli/commands/edit.js';
 import { favoriteCommand, listFavoritesCommand } from '../src/cli/commands/favorite.js';
@@ -225,28 +224,8 @@ describe('remaining direct CLI command branches', () => {
     expect(spinner.fail).toHaveBeenCalled();
   });
 
-  it('covers desktop metadata validation, untrusted downloads, installer platforms, and quiet errors', async () => {
-    https.request.mockImplementationOnce((_options: unknown, cb: (response: any) => void) => { cb(releaseResponse({ tag_name: 'v1', assets: [{ name: 'notes.txt', size: 1, browser_download_url: 'https://github.com/x' }] })); return requestHandle(); });
-    await expect(getDesktopReleaseInfo()).rejects.toThrow('No .exe asset');
-
-    https.request.mockImplementationOnce((_options: unknown, cb: (response: any) => void) => { cb(releaseResponse({ message: 'not found' }, 404)); return requestHandle(); });
-    https.request.mockImplementationOnce((_options: unknown, cb: (response: any) => void) => { cb(releaseResponse({ message: 'not found' }, 404)); return requestHandle(); });
-    await expect(getDesktopReleaseInfo('2.0.0')).rejects.toThrow('not found');
-
-    const release = { tag_name: 'v2.0.0', assets: [{ name: 'BlankDrive-x64.exe', size: 1, browser_download_url: 'http://evil.example/app.exe' }] };
-    https.request.mockImplementationOnce((_options: unknown, cb: (response: any) => void) => { cb(releaseResponse(release)); return requestHandle(); });
-    await expect(downloadDesktopRelease({ output: '/tmp/app.exe', quiet: true })).rejects.toThrow('untrusted URL');
-
-    const child = { once: vi.fn((event: string, cb: (error?: Error) => void) => { if (event === 'spawn') cb(); }), unref: vi.fn() };
-    spawn.mockReturnValue(child);
-    for (const platform of ['linux', 'darwin', 'win32'] as NodeJS.Platform[]) {
-      vi.spyOn(process, 'platform', 'get').mockReturnValue(platform);
-      await launchDesktopInstaller('/tmp/setup.exe');
-    }
-    expect(spawn).toHaveBeenCalledTimes(3);
-
-    https.request.mockImplementationOnce(() => { const req = requestHandle(); req.on.mockImplementation((event: string, cb: (error: Error) => void) => { if (event === 'error') cb(new Error('rate limited')); return req; }); return req; });
-    await expect(desktopCommand({ quiet: true })).rejects.toThrow('rate limited');
+  it('keeps desktop installer functionality removed', async () => {
+    await expect(import('../src/cli/commands/desktop.js')).rejects.toThrow();
   });
 
   it('covers destruct successful cleanup and refuses local cleanup after cloud failure', async () => {
