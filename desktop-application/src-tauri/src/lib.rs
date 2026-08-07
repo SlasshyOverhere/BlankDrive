@@ -112,7 +112,7 @@ fn read_http_status(port: u16) -> bool {
         return false;
     }
 
-    let mut bytes = [0_u8; 128];
+    let mut bytes = [0_u8; 512];
     let count = match stream.read(&mut bytes) {
         Ok(count) => count,
         Err(_) => return false,
@@ -123,7 +123,11 @@ fn read_http_status(port: u16) -> bool {
     }
 
     let response = String::from_utf8_lossy(&bytes[..count]);
-    response.starts_with("HTTP/1.1 200") || response.starts_with("HTTP/1.0 200")
+    // Accept only a 200 response whose body is the BlankDrive /api/status
+    // payload (contains "vaultExists"). This prevents an unrelated HTTP
+    // server on a probed port from being mistaken for the backend.
+    (response.starts_with("HTTP/1.1 200") || response.starts_with("HTTP/1.0 200"))
+        && response.contains("vaultExists")
 }
 
 fn stop_backend_process(state: &State<BackendState>) {
@@ -192,71 +196,91 @@ fn ensure_blankdrive_backend(
     }
 
     let node_bin = resolve_node_binary(&backend_root);
-    let port = select_port(DEFAULT_PORT, PORT_SCAN_COUNT)?;
 
-    let mut command = Command::new(&node_bin);
-    command
-        .arg(&cli_entrypoint)
-        .arg("web")
-        .arg("--port")
-        .arg(port.to_string())
-        .current_dir(&backend_root)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+    // Between probing a free port and binding it in the child, another process
+    // can claim the port. Retry the whole probe+spawn a few times so a port
+    // race does not fail startup.
+    const LAUNCH_ATTEMPTS: usize = 3;
+    let mut last_error: Option<String> = None;
 
-    let mut child = command.spawn().map_err(|error| {
-        format!(
-            "Failed to launch Node sidecar with `{}`: {error}.",
-            node_bin.display()
-        )
-    })?;
+    for attempt in 0..LAUNCH_ATTEMPTS {
+        let port = select_port(DEFAULT_PORT, PORT_SCAN_COUNT)?;
 
-    for _ in 0..STARTUP_RETRY_COUNT {
-        if read_http_status(port) {
-            *guard = Some(BackendProcess { child, port });
-            return Ok(backend_url(port));
+        let mut command = Command::new(&node_bin);
+        command
+            .arg(&cli_entrypoint)
+            .arg("web")
+            .arg("--port")
+            .arg(port.to_string())
+            .current_dir(&backend_root)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        let mut child = match command.spawn() {
+            Ok(child) => child,
+            Err(error) => {
+                last_error = Some(format!(
+                    "Failed to launch Node sidecar with `{}`: {error}.",
+                    node_bin.display()
+                ));
+                sleep(Duration::from_millis(STARTUP_RETRY_DELAY_MS));
+                continue;
+            }
+        };
+
+        for _ in 0..STARTUP_RETRY_COUNT {
+            if read_http_status(port) {
+                *guard = Some(BackendProcess { child, port });
+                return Ok(backend_url(port));
+            }
+
+            if let Some(status) = child
+                .try_wait()
+                .map_err(|error| format!("Failed to query backend process: {error}."))?
+            {
+                let mut stderr = String::new();
+                if let Some(mut stream) = child.stderr.take() {
+                    let _ = stream.read_to_string(&mut stderr);
+                }
+
+                let mut stdout = String::new();
+                if let Some(mut stream) = child.stdout.take() {
+                    let _ = stream.read_to_string(&mut stdout);
+                }
+
+                let details = stderr.trim();
+                let output = stdout.trim();
+                if !details.is_empty() {
+                    last_error = Some(format!(
+                        "BlankDrive backend exited while starting (status: {status}).\n{details}"
+                    ));
+                } else if !output.is_empty() {
+                    last_error = Some(format!(
+                        "BlankDrive backend exited while starting (status: {status}).\n{output}"
+                    ));
+                } else {
+                    last_error = Some(format!(
+                        "BlankDrive backend exited while starting (status: {status})."
+                    ));
+                }
+                break;
+            }
+
+            sleep(Duration::from_millis(STARTUP_RETRY_DELAY_MS));
         }
 
-        if let Some(status) = child
-            .try_wait()
-            .map_err(|error| format!("Failed to query backend process: {error}."))?
-        {
-            let mut stderr = String::new();
-            if let Some(mut stream) = child.stderr.take() {
-                let _ = stream.read_to_string(&mut stderr);
-            }
+        let _ = child.kill();
+        let _ = child.wait();
 
-            let mut stdout = String::new();
-            if let Some(mut stream) = child.stdout.take() {
-                let _ = stream.read_to_string(&mut stdout);
-            }
-
-            let details = stderr.trim();
-            if !details.is_empty() {
-                return Err(format!(
-                    "BlankDrive backend exited while starting (status: {status}).\n{details}"
-                ));
-            }
-
-            let output = stdout.trim();
-            if !output.is_empty() {
-                return Err(format!(
-                    "BlankDrive backend exited while starting (status: {status}).\n{output}"
-                ));
-            }
-
-            return Err(format!(
-                "BlankDrive backend exited while starting (status: {status})."
-            ));
+        if attempt + 1 < LAUNCH_ATTEMPTS {
+            sleep(Duration::from_millis(STARTUP_RETRY_DELAY_MS));
         }
-
-        sleep(Duration::from_millis(STARTUP_RETRY_DELAY_MS));
     }
 
-    let _ = child.kill();
-    let _ = child.wait();
-    Err("Timed out while waiting for BlankDrive backend to become ready.".to_string())
+    Err(last_error.unwrap_or_else(|| {
+        "Timed out while waiting for BlankDrive backend to become ready.".to_string()
+    }))
 }
 
 #[tauri::command]
@@ -296,28 +320,15 @@ fn check_blankdrive_update(app: tauri::AppHandle) -> Result<serde_json::Value, S
 }
 
 #[tauri::command]
-fn install_blankdrive_update(app: tauri::AppHandle) -> Result<String, String> {
-    let current_version = app.package_info().version.to_string();
-    let args = vec![
-        "update",
-        "--install",
-        "--yes",
-        "--force",
-        "--current-version",
-        current_version.as_str(),
-    ];
-
-    let output = run_blankdrive_cli(&app, &args)?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        return Err(if stderr.is_empty() {
-            "Desktop update command failed.".to_string()
-        } else {
-            stderr
-        });
-    }
-
-    Ok("Installer launched".to_string())
+fn install_blankdrive_update(_app: tauri::AppHandle) -> Result<String, String> {
+    // The CLI's `update --install` performs an npm global install of the CLI
+    // package and relaunches that process. Running that from the desktop app
+    // would not install a new desktop build and would exit the sidecar, so it
+    // is intentionally disabled here. Desktop updates should be distributed
+    // through the operating system's update channel.
+    Err(
+        "Desktop updates are not installed through the bundled CLI. Update BlankDrive Desktop through your system's app store or download a new release.".to_string(),
+    )
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

@@ -399,6 +399,19 @@ async function downloadWithProgress(
           if (progress) {
             progress.finish();
           }
+
+          // Integrity check: the downloaded byte count must match the declared
+          // content-length / asset size. Reject truncated or tampered downloads
+          // before the file is ever handed to the installer.
+          if (downloaded !== totalBytes) {
+            stream.close(() => {});
+            fsPromises.unlink(outputPath).catch(() => {});
+            reject(new Error(
+              `Downloaded size mismatch: expected ${totalBytes} bytes, got ${downloaded}.`
+            ));
+            return;
+          }
+
           stream.close((closeError) => {
             if (closeError) {
               reject(closeError);
