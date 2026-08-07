@@ -19,6 +19,7 @@ import {
   getEntryKey,
   initializeKeyManager,
   generateUUID,
+  verifyChecksum,
 } from '../../crypto/index.js';
 import {
   createEmptyIndex,
@@ -41,15 +42,68 @@ const VAULT_DIR = path.join(os.homedir(), '.slasshy');
 const INDEX_FILE = 'vault.enc';
 const CARRIERS_DIR = 'carriers';
 const CONFIG_FILE = 'config.json';
+const ENTRIES_DIR = 'entries';
+const SECURE_DIR_MODE = 0o700;
+const SECURE_FILE_MODE = 0o600;
 
 let vaultIndex: VaultIndex | null = null;
 
-/**
- * Ensure vault directory exists
- */
+async function ensurePrivateDir(dir: string): Promise<void> {
+  await fs.mkdir(dir, { recursive: true, mode: SECURE_DIR_MODE });
+  await fs.chmod(dir, SECURE_DIR_MODE);
+}
+
 async function ensureVaultDir(): Promise<void> {
-  await fs.mkdir(VAULT_DIR, { recursive: true });
-  await fs.mkdir(path.join(VAULT_DIR, CARRIERS_DIR), { recursive: true });
+  await ensurePrivateDir(VAULT_DIR);
+  await ensurePrivateDir(path.join(VAULT_DIR, CARRIERS_DIR));
+  await ensurePrivateDir(path.join(VAULT_DIR, ENTRIES_DIR));
+}
+
+function validateEntryId(id: string): void {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) {
+    throw new Error('Invalid entry ID');
+  }
+}
+
+function getExpectedChecksum(indexEntry: IndexEntry): string | undefined {
+  return (indexEntry as IndexEntry & { checksum?: string }).checksum;
+}
+
+function verifyStoredChecksum(data: Buffer, checksum: string): boolean {
+  if (verifyChecksum(data, checksum)) return true;
+  return checksum.length === 64 && crypto.createHash('sha256').update(data).digest('hex') === checksum;
+}
+
+async function verifyFileDataChecksum(data: Buffer, indexEntry: IndexEntry, id: string): Promise<void> {
+  let checksum = getExpectedChecksum(indexEntry);
+  if (!checksum) checksum = (await getFileEntry(id))?.checksum;
+  if (checksum && !verifyStoredChecksum(data, checksum)) {
+    throw new Error('checksum verification failed');
+  }
+}
+
+async function writeSecureFile(filePath: string, data: string | Buffer, encoding?: BufferEncoding): Promise<void> {
+  if (encoding) {
+    await fs.writeFile(filePath, data as string, { encoding, mode: SECURE_FILE_MODE });
+  } else {
+    await fs.writeFile(filePath, data as Buffer, { mode: SECURE_FILE_MODE });
+  }
+  await fs.chmod(filePath, SECURE_FILE_MODE);
+}
+
+async function saveEncryptedIndex(): Promise<void> {
+  if (!vaultIndex) throw new Error('No vault index loaded');
+  await ensureVaultDir();
+  const fileContent = `${vaultIndex.salt}|${encryptObject(vaultIndex, getIndexKey())}`;
+  const indexPath = path.join(VAULT_DIR, INDEX_FILE);
+  const tempPath = `${indexPath}.${process.pid}.${generateUUID()}.tmp`;
+  try {
+    await writeSecureFile(tempPath, fileContent, 'utf-8');
+    await fs.rename(tempPath, indexPath);
+    await fs.chmod(indexPath, SECURE_FILE_MODE);
+  } finally {
+    await fs.unlink(tempPath).catch(() => {});
+  }
 }
 
 /**
@@ -77,101 +131,29 @@ export async function vaultExists(): Promise<boolean> {
 }
 
 /**
- * Initialize a new vault
+ * Initialize a new vault.
  */
 export async function initVault(password: string): Promise<void> {
-  if (await vaultExists()) {
-    throw new Error('Vault already exists. Use unlock instead.');
-  }
-
+  if (await vaultExists()) throw new Error('Vault already exists. Use unlock instead.');
   await ensureVaultDir();
   initializeKeyManager();
-
   const { salt, keyHash } = await createVault(password);
-
-  vaultIndex = createEmptyIndex(
-    salt.toString('base64'),
-    keyHash.toString('base64')
-  );
-
-  await saveIndex();
+  vaultIndex = createEmptyIndex(salt.toString('base64'), keyHash.toString('base64'));
+  await saveEncryptedIndex();
 }
 
-/**
- * Save the encrypted index to disk
- */
-async function saveIndex(): Promise<void> {
-  if (!vaultIndex) {
-    throw new Error('No vault index loaded');
-  }
-
-  const indexKey = getIndexKey();
-  const encryptedIndex = encryptObject(vaultIndex, indexKey);
-
-  await fs.writeFile(
-    path.join(VAULT_DIR, INDEX_FILE),
-    encryptedIndex,
-    'utf-8'
-  );
-}
-
-/**
- * Load and decrypt the index from disk
- */
 async function loadIndex(password: string): Promise<VaultIndex> {
-  const encryptedIndex = await fs.readFile(
-    path.join(VAULT_DIR, INDEX_FILE),
-    'utf-8'
-  );
-
-  // First, we need to extract salt from a minimal parse
-  // The index is encrypted, so we store salt in a header
+  const encryptedIndex = await fs.readFile(path.join(VAULT_DIR, INDEX_FILE), 'utf-8');
   const headerEnd = encryptedIndex.indexOf('|');
-  if (headerEnd === -1) {
-    // Old format - salt is inside encrypted data
-    // We need a bootstrap approach
-    throw new Error('Invalid vault format');
-  }
-
+  if (headerEnd === -1) throw new Error('Invalid vault format');
   const salt = Buffer.from(encryptedIndex.substring(0, headerEnd), 'base64');
-  const encryptedData = encryptedIndex.substring(headerEnd + 1);
-
   await unlockVault(password, salt);
-
-  const indexKey = getIndexKey();
-  const decrypted = decryptObject<VaultIndex>(encryptedData, indexKey);
-
-  return validateVaultIndex(decrypted);
+  return validateVaultIndex(decryptObject<VaultIndex>(encryptedIndex.substring(headerEnd + 1), getIndexKey()));
 }
 
-/**
- * Initialize vault with proper header format
- */
+/** Compatibility name for callers that used the header-specific initializer. */
 export async function initVaultWithHeader(password: string): Promise<void> {
-  if (await vaultExists()) {
-    throw new Error('Vault already exists. Use unlock instead.');
-  }
-
-  await ensureVaultDir();
-  initializeKeyManager();
-
-  const { salt, keyHash } = await createVault(password);
-
-  vaultIndex = createEmptyIndex(
-    salt.toString('base64'),
-    keyHash.toString('base64')
-  );
-
-  // Save with header format: SALT_BASE64|ENCRYPTED_INDEX
-  const indexKey = getIndexKey();
-  const encryptedIndex = encryptObject(vaultIndex, indexKey);
-  const fileContent = `${salt.toString('base64')}|${encryptedIndex}`;
-
-  await fs.writeFile(
-    path.join(VAULT_DIR, INDEX_FILE),
-    fileContent,
-    'utf-8'
-  );
+  return initVault(password);
 }
 
 /**
@@ -242,9 +224,9 @@ export async function addEntry(
   };
 
   // Store encrypted entry locally
-  const entryPath = path.join(VAULT_DIR, 'entries', `${entry.id}.enc`);
-  await fs.mkdir(path.join(VAULT_DIR, 'entries'), { recursive: true });
-  await fs.writeFile(entryPath, encryptedEntry, 'utf-8');
+  const entryPath = path.join(VAULT_DIR, ENTRIES_DIR, `${entry.id}.enc`);
+  await fs.mkdir(path.join(VAULT_DIR, ENTRIES_DIR), { recursive: true, mode: SECURE_DIR_MODE });
+  await writeSecureFile(entryPath, encryptedEntry, 'utf-8');
 
   // Update index
   vaultIndex.entries[entry.id] = indexEntry;
@@ -260,25 +242,14 @@ export async function addEntry(
  * Save index with header format
  */
 async function saveIndexWithHeader(): Promise<void> {
-  if (!vaultIndex) {
-    throw new Error('No vault index loaded');
-  }
-
-  const indexKey = getIndexKey();
-  const encryptedIndex = encryptObject(vaultIndex, indexKey);
-  const fileContent = `${vaultIndex.salt}|${encryptedIndex}`;
-
-  await fs.writeFile(
-    path.join(VAULT_DIR, INDEX_FILE),
-    fileContent,
-    'utf-8'
-  );
+  await saveEncryptedIndex();
 }
 
 /**
  * Get an entry by ID
  */
 export async function getEntry(id: string): Promise<Entry | null> {
+  validateEntryId(id);
   if (!isUnlocked() || !vaultIndex) {
     throw new Error('Vault is locked');
   }
@@ -287,7 +258,7 @@ export async function getEntry(id: string): Promise<Entry | null> {
     return null;
   }
 
-  const entryPath = path.join(VAULT_DIR, 'entries', `${id}.enc`);
+  const entryPath = path.join(VAULT_DIR, ENTRIES_DIR, `${id}.enc`);
 
   try {
     const encryptedEntry = await fs.readFile(entryPath, 'utf-8');
@@ -418,8 +389,8 @@ export async function updateEntry(
 
   // Re-encrypt entry
   const encryptedEntry = encryptObject(updated, entryKey, id);
-  const entryPath = path.join(VAULT_DIR, 'entries', `${id}.enc`);
-  await fs.writeFile(entryPath, encryptedEntry, 'utf-8');
+  const entryPath = path.join(VAULT_DIR, ENTRIES_DIR, `${id}.enc`);
+  await writeSecureFile(entryPath, encryptedEntry, 'utf-8');
 
   // Update index if title changed
   if (updates.title) {
@@ -444,6 +415,7 @@ export async function updateEntry(
  * Toggle favorite status of an entry
  */
 export async function toggleFavorite(id: string): Promise<{ favorite: boolean } | null> {
+  validateEntryId(id);
   if (!isUnlocked() || !vaultIndex) {
     throw new Error('Vault is locked');
   }
@@ -474,6 +446,7 @@ export async function toggleFavorite(id: string): Promise<{ favorite: boolean } 
  * Delete an entry
  */
 export async function deleteEntry(id: string): Promise<boolean> {
+  validateEntryId(id);
   if (!isUnlocked() || !vaultIndex) {
     throw new Error('Vault is locked');
   }
@@ -483,7 +456,7 @@ export async function deleteEntry(id: string): Promise<boolean> {
   }
 
   // Delete encrypted entry file
-  const entryPath = path.join(VAULT_DIR, 'entries', `${id}.enc`);
+  const entryPath = path.join(VAULT_DIR, ENTRIES_DIR, `${id}.enc`);
   try {
     await fs.unlink(entryPath);
   } catch {
@@ -613,6 +586,7 @@ export function getTempFilesDir(): string {
  */
 export async function cleanupTempFiles(entryId: string, chunkCount: number): Promise<void> {
   try {
+    validateEntryId(entryId);
     if (chunkCount === 1) {
       await fs.unlink(path.join(TEMP_FILES_DIR, `${entryId}.bin`)).catch(() => {});
     } else {
@@ -704,8 +678,8 @@ export async function addFileEntry(
   const encryptedEntry = encryptObject(entry, entryKey, entry.id);
 
   // Prepare directories - use temp folder for encrypted file data
-  await fs.mkdir(path.join(VAULT_DIR, 'entries'), { recursive: true });
-  await fs.mkdir(TEMP_FILES_DIR, { recursive: true });
+  await fs.mkdir(path.join(VAULT_DIR, ENTRIES_DIR), { recursive: true, mode: SECURE_DIR_MODE });
+  await ensurePrivateDir(TEMP_FILES_DIR);
 
   // Determine if we need chunking
   const needsChunking = fileSize > CHUNK_SIZE;
@@ -726,7 +700,7 @@ export async function addFileEntry(
 
         // Write chunk to temp folder as binary
         const chunkPath = path.join(TEMP_FILES_DIR, `${entry.id}_${i}.bin`);
-        await fs.writeFile(chunkPath, encryptedChunk);
+        await writeSecureFile(chunkPath, encryptedChunk);
 
         bytesProcessed += chunkBuffer.length;
         if (onProgress) {
@@ -741,7 +715,7 @@ export async function addFileEntry(
     const fileData = await fs.readFile(filePath);
     const encryptedFileData = encryptToBuffer(fileData, entryKey, entry.id);
     const fileDataPath = path.join(TEMP_FILES_DIR, `${entry.id}.bin`);
-    await fs.writeFile(fileDataPath, encryptedFileData);
+    await writeSecureFile(fileDataPath, encryptedFileData);
 
     if (onProgress) {
       onProgress(fileSize, fileSize);
@@ -749,8 +723,8 @@ export async function addFileEntry(
   }
 
   // Store encrypted entry metadata
-  const entryPath = path.join(VAULT_DIR, 'entries', `${entry.id}.enc`);
-  await fs.writeFile(entryPath, encryptedEntry, 'utf-8');
+  const entryPath = path.join(VAULT_DIR, ENTRIES_DIR, `${entry.id}.enc`);
+  await writeSecureFile(entryPath, encryptedEntry, 'utf-8');
 
   // Create index entry
   const indexEntry: IndexEntry = {
@@ -781,6 +755,7 @@ export async function addFileEntry(
  * Get a file entry by ID
  */
 export async function getFileEntry(id: string): Promise<FileEntry | null> {
+  validateEntryId(id);
   if (!isUnlocked() || !vaultIndex) {
     throw new Error('Vault is locked');
   }
@@ -790,7 +765,7 @@ export async function getFileEntry(id: string): Promise<FileEntry | null> {
     return null;
   }
 
-  const entryPath = path.join(VAULT_DIR, 'entries', `${id}.enc`);
+  const entryPath = path.join(VAULT_DIR, ENTRIES_DIR, `${id}.enc`);
 
   try {
     const encryptedEntry = await fs.readFile(entryPath, 'utf-8');
@@ -822,9 +797,9 @@ export async function addNoteEntry(
   const encryptedEntry = encryptObject(entry, entryKey, entry.id);
 
   // Store encrypted entry
-  const entryPath = path.join(VAULT_DIR, 'entries', `${entry.id}.enc`);
-  await fs.mkdir(path.join(VAULT_DIR, 'entries'), { recursive: true });
-  await fs.writeFile(entryPath, encryptedEntry, 'utf-8');
+  const entryPath = path.join(VAULT_DIR, ENTRIES_DIR, `${entry.id}.enc`);
+  await fs.mkdir(path.join(VAULT_DIR, ENTRIES_DIR), { recursive: true, mode: SECURE_DIR_MODE });
+  await writeSecureFile(entryPath, encryptedEntry, 'utf-8');
 
   // Create index entry
   const indexEntry: IndexEntry = {
@@ -852,6 +827,7 @@ export async function addNoteEntry(
  * Get a note entry by ID
  */
 export async function getNoteEntry(id: string): Promise<NoteEntry | null> {
+  validateEntryId(id);
   if (!isUnlocked() || !vaultIndex) {
     throw new Error('Vault is locked');
   }
@@ -861,7 +837,7 @@ export async function getNoteEntry(id: string): Promise<NoteEntry | null> {
     return null;
   }
 
-  const entryPath = path.join(VAULT_DIR, 'entries', `${id}.enc`);
+  const entryPath = path.join(VAULT_DIR, ENTRIES_DIR, `${id}.enc`);
 
   try {
     const encryptedEntry = await fs.readFile(entryPath, 'utf-8');
@@ -900,8 +876,8 @@ export async function updateNoteEntry(
 
   // Re-encrypt entry
   const encryptedEntry = encryptObject(updated, entryKey, id);
-  const entryPath = path.join(VAULT_DIR, 'entries', `${id}.enc`);
-  await fs.writeFile(entryPath, encryptedEntry, 'utf-8');
+  const entryPath = path.join(VAULT_DIR, ENTRIES_DIR, `${id}.enc`);
+  await writeSecureFile(entryPath, encryptedEntry, 'utf-8');
 
   // Update index if title changed
   if (updates.title) {
@@ -925,6 +901,7 @@ export async function getFileData(
   id: string,
   onProgress?: (bytesProcessed: number, totalBytes: number) => void
 ): Promise<Buffer | null> {
+  validateEntryId(id);
   if (!isUnlocked() || !vaultIndex) {
     throw new Error('Vault is locked');
   }
@@ -970,7 +947,9 @@ export async function getFileData(
       }
     }
 
-    return Buffer.concat(chunks);
+    const result = Buffer.concat(chunks);
+    await verifyFileDataChecksum(result, indexEntry, id);
+    return result;
   } else {
     // Single file (not chunked)
     const fileDataPath = path.join(filesDir, `${id}.bin`);
@@ -991,6 +970,7 @@ export async function getFileData(
       result = decryptFromPayload(encryptedData.toString('utf-8'), entryKey, id);
     }
 
+    await verifyFileDataChecksum(result, indexEntry, id);
     if (onProgress && indexEntry.fileSize) {
       onProgress(indexEntry.fileSize, indexEntry.fileSize);
     }
