@@ -1,4 +1,38 @@
+# Dependencies and build output
 node_modules/
+dist/
+
+# Local configuration and secrets
 .env
+.env.*
+!.env.example
+*.local
+*.pem
+*.key
+*.p12
+*.pfx
+credentials*.json
+token*.json
+
+# Vault files (never commit!)
+.slasshy/
+*.enc
+.slasshy-credentials.json
+.npmrc
+*.tgz
+
+# Logs and test output
 *.log
+coverage/
+
+# Agent reports (internal development notes - never commit!)
+agent-report/
+
+# Remotion workspace (generated media and local tooling)
+remotion/
+
+# OS and IDE files
 .DS_Store
+Thumbs.db
+.vscode/
+.idea/

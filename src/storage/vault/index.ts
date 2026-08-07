@@ -1,6 +1,6 @@
 export {
   vaultExists,
-  initVaultWithHeader as initVault,
+  initVault,
   unlock,
   lock,
   isUnlocked,

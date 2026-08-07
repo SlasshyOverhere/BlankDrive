@@ -41,6 +41,7 @@ const CLOUD_STORAGE_CONFIG_PATH = path.join(os.homedir(), '.slasshy', 'cloud_sto
 const OAUTH_CALLBACK_PATH = '/';
 const OAUTH_TIMEOUT_MS = 5 * 60 * 1000;
 const PUBLIC_ROOT_FOLDER_NAME = 'BlankDrive';
+export const DEFAULT_OAUTH_BACKEND_URL = '';
 const OAUTH_CALLBACK_PORT = 3411; // Fixed port for OAuth callback
 
 // Default Google OAuth credentials (embedded for seamless user experience)
@@ -55,7 +56,6 @@ let cachedPublicRootFolderId: string | null = null;
 let cachedPublicContentFolderId: string | null = null;
 let publicRootFolderInitPromise: Promise<string> | null = null;
 let publicContentFolderInitPromise: Promise<string> | null = null;
-let publicFolderConfigGeneration = 0;
 
 interface GoogleOAuthCredentials {
   clientId: string;
@@ -67,6 +67,7 @@ export type CloudStorageMode = 'hidden' | 'public';
 interface CloudStorageConfig {
   mode: CloudStorageMode;
   publicContentFolderName?: string;
+  oauthBackendUrl?: string;
 }
 
 function normalizePublicContentFolderName(value?: string | null): string | null {
@@ -87,7 +88,6 @@ function normalizePublicContentFolderName(value?: string | null): string | null 
 }
 
 function resetPublicFolderCache(): void {
-  publicFolderConfigGeneration += 1;
   cachedPublicRootFolderId = null;
   cachedPublicContentFolderId = null;
   publicRootFolderInitPromise = null;
@@ -269,6 +269,42 @@ export async function setPublicContentFolderName(folderName: string): Promise<vo
   resetPublicFolderCache();
 }
 
+function normalizeOAuthBackendUrl(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return '';
+  }
+
+  const parsed = assertSecureServerUrl(trimmed, 'OAuth backend URL');
+  if (parsed.pathname !== '/' || parsed.search || parsed.hash) {
+    throw new Error('OAuth backend URL must be an origin without a path, query, or hash.');
+  }
+
+  return parsed.toString().replace(/\\\/$/, '');
+}
+
+/** Resolve the configured backend, or null for local OAuth. */
+export async function getOAuthBackendUrl(): Promise<string | null> {
+  const envValue = process.env.BLANKDRIVE_OAUTH_BACKEND_URL;
+  if (envValue !== undefined) {
+    return normalizeOAuthBackendUrl(envValue) || null;
+  }
+
+  const config = await readCloudStorageConfig();
+  if (config.oauthBackendUrl !== undefined) {
+    return normalizeOAuthBackendUrl(config.oauthBackendUrl) || null;
+  }
+
+  return normalizeOAuthBackendUrl(DEFAULT_OAUTH_BACKEND_URL) || null;
+}
+
+/** Persist a backend origin, or an empty value for local OAuth. */
+export async function setOAuthBackendUrl(value: string): Promise<void> {
+  const normalized = normalizeOAuthBackendUrl(value);
+  const currentConfig = await readCloudStorageConfig();
+  await writeCloudStorageConfig({ ...currentConfig, oauthBackendUrl: normalized });
+}
+
 /**
  * Save Google OAuth client credentials to local encrypted storage
  */
@@ -334,8 +370,12 @@ function createOAuthClient(
  * Check if already authenticated
  */
 export async function isAuthenticated(): Promise<boolean> {
-  const tokens = await loadTokens();
-  return Boolean(tokens?.access_token || tokens?.refresh_token);
+  try {
+    await fs.access(TOKEN_PATH);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -637,6 +677,11 @@ export async function authenticateDrive(): Promise<void> {
       }
     }
 
+    if (hasAccessToken) {
+      // Last attempt: try using existing token even if expiry metadata is missing/stale.
+      await setupDriveClient(savedTokens, oauthCredentials);
+      return;
+    }
   }
 
   throw new Error(
@@ -653,13 +698,11 @@ export async function performOAuthFlow(
     persistTokens?: boolean;
   }
 ): Promise<void> {
-  // Backend OAuth is opt-in; remote endpoints must use HTTPS.
-  const configuredBackendUrl = process.env.BLANKDRIVE_OAUTH_BACKEND_URL;
-  if (!configuredBackendUrl) {
+  const backendUrl = await getOAuthBackendUrl();
+  if (!backendUrl) {
     await performLocalOAuthFlow(openBrowser, options);
     return;
   }
-  const backendUrl = assertSecureServerUrl(configuredBackendUrl, 'BLANKDRIVE_OAUTH_BACKEND_URL').toString().replace(/\/$/, '');
 
   try {
     // Step 1: Generate PKCE parameters locally (frontend generates verifier)
@@ -672,13 +715,14 @@ export async function performOAuthFlow(
 
     // Step 3: Get auth URL from backend - send our code challenge
     console.log('  Generating authorization URL from backend...');
-    const authUrlResponse = await fetch(`${backendUrl}/api/oauth/generate-url?${new URLSearchParams({
-      redirect_uri: redirectUri,
-      state: ourState,
-      code_challenge: ourCodeChallenge,
-      code_challenge_method: 'S256',
-      code_verifier: ourCodeVerifier,
-    })}`);
+    const authUrlResponse = await fetch(
+      `${backendUrl}/api/oauth/generate-url?` +
+      `redirect_uri=${encodeURIComponent(redirectUri)}&` +
+      `state=${encodeURIComponent(ourState)}&` +
+      `code_challenge=${encodeURIComponent(ourCodeChallenge)}&` +
+      `code_challenge_method=S256&` +
+      `code_verifier=${encodeURIComponent(ourCodeVerifier)}`
+    );
 
     if (!authUrlResponse.ok) {
       throw new Error(`Backend returned status ${authUrlResponse.status}`);
@@ -759,8 +803,10 @@ export async function performOAuthFlow(
           throw new Error(`OAuth error: ${error}`);
         }
 
-        if (!code || url.searchParams.get('state') !== ourState) {
-          throw new Error('Invalid callback URL. State or authorization code is missing.');
+        if (!code) {
+          console.log(chalk.red('  ✗ No authorization code found in URL'));
+          console.log(chalk.gray('  URL received:', callbackUrl));
+          throw new Error('No code in callback URL');
         }
 
         console.log(chalk.green('  ✓ Code extracted successfully\n'));
@@ -786,7 +832,11 @@ export async function performOAuthFlow(
       let errorMessage = `Backend returned status ${exchangeResponse.status}`;
       try {
         const errorData = await exchangeResponse.json() as BackendErrorResponse & { details?: any };
-          errorMessage = errorData.error || errorMessage;
+        console.error('  Backend error details:', errorData);
+        errorMessage = errorData.error || errorData.message || errorMessage;
+        if (errorData.details) {
+          console.error('  Error details:', JSON.stringify(errorData.details, null, 2));
+        }
       } catch {
         // If we can't parse error response, use status text
         errorMessage = exchangeResponse.statusText || errorMessage;
@@ -927,7 +977,6 @@ export function isDriveConnected(): boolean {
 export function disconnectDrive(): void {
   driveClient = null;
   authClient = null;
-  resetPublicFolderCache();
 }
 
 /**
@@ -1199,7 +1248,6 @@ async function getPublicContentFolderId(): Promise<string> {
     return publicContentFolderInitPromise;
   }
 
-  const generation = publicFolderConfigGeneration;
   publicContentFolderInitPromise = (async () => {
     const rootId = await getPublicRootFolderId();
     const folderName = await getPublicContentFolderName();
@@ -1209,9 +1257,7 @@ async function getPublicContentFolderId(): Promise<string> {
     }
 
     const folderId = await getOrCreateFolder(folderName, rootId);
-    if (generation === publicFolderConfigGeneration) {
-      cachedPublicContentFolderId = folderId;
-    }
+    cachedPublicContentFolderId = folderId;
     return folderId;
   })().finally(() => {
     publicContentFolderInitPromise = null;
@@ -1435,8 +1481,7 @@ export async function downloadFromAppData(
     { responseType: 'stream' }
   );
 
-  const tempPath = `${outputPath}.download-${crypto.randomUUID()}.tmp`;
-  const dest = fsSync.createWriteStream(tempPath, { mode: 0o600 });
+  const dest = fsSync.createWriteStream(outputPath);
   let bytesDownloaded = 0;
 
   return new Promise((resolve, reject) => {
@@ -1449,27 +1494,10 @@ export async function downloadFromAppData(
       });
     }
 
-    let settled = false;
-    const fail = async (err: Error): Promise<void> => {
-      if (settled) return;
-      settled = true;
-      dest.destroy();
-      await fs.unlink(tempPath).catch(() => {});
-      reject(err);
-    };
-    stream.on('error', (err: Error) => { void fail(err); });
-    dest.on('error', (err: Error) => { void fail(err); });
-    dest.on('finish', async () => {
-      if (settled) return;
-      try {
-        await fs.rename(tempPath, outputPath);
-        settled = true;
-        resolve();
-      } catch (error) {
-        await fail(error instanceof Error ? error : new Error('Failed to finalize download.'));
-      }
-    });
-    stream.pipe(dest);
+    stream
+      .on('end', () => resolve())
+      .on('error', (err: Error) => reject(err))
+      .pipe(dest);
   });
 }
 

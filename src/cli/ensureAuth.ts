@@ -7,6 +7,7 @@ import {
   performOAuthFlow,
   setGoogleOAuthCredentials,
   isGoogleOAuthConfigured,
+  getOAuthBackendUrl,
   getCloudStorageMode,
   isCloudStorageModeConfigured,
   getPublicContentFolderName,
@@ -239,7 +240,7 @@ export async function ensureAuthenticated(): Promise<boolean> {
   }
 
   // Step 4: Skip OAuth credential check when using backend service
-  const usingBackend = Boolean(process.env.BLANKDRIVE_OAUTH_BACKEND_URL);
+  const usingBackend = (await getOAuthBackendUrl()) !== null;
   if (!usingBackend) {
     // Only check credentials if NOT using backend
     if (!await isGoogleOAuthConfigured()) {

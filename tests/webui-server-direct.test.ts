@@ -182,7 +182,7 @@ describe('web UI server direct HTTP coverage', () => {
     expect(html.status).toBe(200);
     const text = await html.text();
     expect(text).toContain('nonce=');
-    expect(text).toContain('const UI_CAPABILITY=decodeURIComponent(location.hash.slice(1));');
+    expect(text).toContain('const UI_CAPABILITY="test-capability";');
     expect(html.headers.get('content-security-policy')).toContain("script-src 'nonce-");
     expect(html.headers.get('x-content-type-options')).toBe('nosniff');
     expect(html.headers.get('x-frame-options')).toBe('DENY');

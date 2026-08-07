@@ -62,6 +62,7 @@ const drive = vi.hoisted(() => ({
   setGoogleOAuthCredentialsForSession: vi.fn(),
   getGoogleOAuthCredentials: vi.fn().mockResolvedValue(null),
   isGoogleOAuthConfigured: vi.fn().mockResolvedValue(true),
+  getOAuthBackendUrl: vi.fn(() => process.env.BLANKDRIVE_OAUTH_BACKEND_URL || null),
   getCloudStorageMode: vi.fn().mockResolvedValue('hidden'),
   setCloudStorageMode: vi.fn().mockResolvedValue(undefined),
   isCloudStorageModeConfigured: vi.fn().mockResolvedValue(true),

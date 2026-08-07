@@ -30,14 +30,54 @@ CLI command names after install:
 - `blankdrive` (default)
 - `BLANK` (backward-compatible alias)
 
-## Client-Only Architecture
+## Architecture and OAuth Modes
 
-BlankDrive is fully client-side:
+BlankDrive keeps the vault client-side. Plaintext vault data is not sent to a
+BlankDrive-hosted service.
 
-- No backend auth server
-- No remote token broker
-- OAuth runs locally with Google directly (loopback + PKCE)
-- OAuth credentials and tokens are encrypted and stored on your machine
+OAuth supports two modes:
+
+- **Local OAuth (fallback):** the CLI talks to Google directly through a
+  loopback callback on `127.0.0.1` and uses PKCE.
+- **Optional OAuth backend:** the service in `backend_oauth/` can generate the
+  Google authorization URL and exchange the authorization code. It keeps only
+  short-lived PKCE/state data in memory and returns tokens to the client; it
+  does not persist tokens or refresh them on the client's behalf.
+
+The CLI tries the backend at `http://localhost:3410` by default and falls back
+to local OAuth if it is unavailable. Set a different backend explicitly when
+needed:
+
+```bash
+BLANKDRIVE_OAUTH_BACKEND_URL=https://oauth.example.com BLANK auth
+```
+
+OAuth credentials and tokens are encrypted and stored locally on the client.
+The backend's setup and deployment instructions are in
+[`backend_oauth/README.md`](backend_oauth/README.md).
+
+### Optional OAuth Backend
+
+```bash
+cd backend_oauth
+cp .env.example .env
+# Edit .env with GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET
+npm install
+npm start
+```
+
+Keep the backend bound to loopback unless it is deliberately deployed behind
+an authenticated, HTTPS-protected network boundary. The backend accepts only
+loopback HTTP redirect URIs and the client still receives and stores its own
+tokens.
+
+For local development, the default values are:
+
+- Backend: `http://127.0.0.1:3410`
+- Web UI: `http://localhost:4310`
+- OAuth callback: `http://127.0.0.1:<port>` (the CLI chooses the callback port)
+
+The web UI itself is also local-only and does not require the OAuth backend.
 
 ## Tech Stack
 

@@ -26,6 +26,7 @@ const drive = vi.hoisted(() => ({
   performOAuthFlow: vi.fn(),
   setGoogleOAuthCredentials: vi.fn(),
   isGoogleOAuthConfigured: vi.fn(),
+  getOAuthBackendUrl: vi.fn(() => process.env.BLANKDRIVE_OAUTH_BACKEND_URL || null),
   getCloudStorageMode: vi.fn(),
   isCloudStorageModeConfigured: vi.fn(),
   getPublicContentFolderName: vi.fn(),
