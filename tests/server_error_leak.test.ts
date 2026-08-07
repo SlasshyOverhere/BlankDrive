@@ -9,6 +9,7 @@ vi.mock('../src/storage/vault/index.js', () => {
     isUnlocked: vi.fn().mockReturnValue(true),
     getStats: vi.fn().mockReturnValue({}),
     getVaultPaths: vi.fn().mockReturnValue({ dir: '/tmp/test' }),
+    getVault2FAConfig: vi.fn().mockReturnValue(undefined),
     // Mock other exports used by server.ts if necessary, but these should be enough for /api/init
     addEntry: vi.fn(),
     addNoteEntry: vi.fn(),
@@ -49,7 +50,7 @@ describe('Web UI Error Handling', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-BlankDrive-UI': '1', // Required header
+        'X-BlankDrive-UI': serverHandle.capability,
       },
       body: JSON.stringify({ password: 'test' }),
     });
