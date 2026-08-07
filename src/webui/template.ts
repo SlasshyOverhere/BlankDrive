@@ -537,7 +537,7 @@ button:disabled {
 .hint.empty-state {
   padding: 28px 12px;
   text-align: center;
-  color: var(--text-faint);
+  color: var(--text-muted);
 }
 
 .hidden {
@@ -1127,7 +1127,7 @@ input[type="file"]::file-selector-button {
     el.createType.addEventListener('change',switchCreate);
     el.search.addEventListener('input',()=>{if(searchTimer)clearTimeout(searchTimer);searchTimer=setTimeout(()=>{void refreshEntries()},200)});
     el.typeFilter.addEventListener('change',()=>{void refreshEntries()});
-    el.refreshButton.addEventListener('click',async ()=>{busy(el.refreshButton,true,'Refreshing…','Refresh');await refreshStatus(true);busy(el.refreshButton,false,'Refreshing…','Refresh')});
+    el.refreshButton.addEventListener('click',async ()=>{busy(el.refreshButton,true,'Refreshing…','Refresh state');await refreshStatus(true);busy(el.refreshButton,false,'Refreshing…','Refresh state')});
     el.reloadEntries.addEventListener('click',async ()=>{busy(el.reloadEntries,true,'Reloading…','Reload');await refreshEntries();busy(el.reloadEntries,false,'Reloading…','Reload')});
     el.lockButton.addEventListener('click',()=>{void onLock()});
     el.initForm.addEventListener('submit',ev=>{void onInit(ev)});
