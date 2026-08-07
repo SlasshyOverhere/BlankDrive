@@ -27,12 +27,7 @@ interface UpdateCheckOptions {
 export interface UpdateCommandOptions {
   check?: boolean;
   install?: boolean;
-  release?: string;
-  version?: string;
   currentVersion?: string;
-  asset?: string;
-  output?: string;
-  force?: boolean;
   yes?: boolean;
   json?: boolean;
   scheduled?: boolean;

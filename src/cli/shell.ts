@@ -28,7 +28,6 @@ import {
   syncCommand,
   settingsCommand,
   webCommand,
-  desktopCommand,
   updateCommand,
 } from './commands/index.js';
 import { resetAutoLockTimer, startAutoLockTimer, stopAutoLockTimer, setAutoLockTimeout, getAutoLockSettings } from './autoLock.js';
@@ -150,7 +149,6 @@ const COMMANDS = [
   'sync', 'sync --status', 'sync --conflicts', 'sync --force',
   'settings', 'settings --storage hidden', 'settings --storage public', 'settings --folder vault-data', 'settings --storage public --folder vault-data',
   'web', 'web --open', 'web --port 4310', 'ui', 'ui --open',
-  'desktop', 'desktop --release v0.0.3', 'desktop --install',
   'update', 'update --check', 'update --install', 'update --scheduled',
   'auth', 'auth --setup', 'auth --logout',
   'lock',
@@ -180,7 +178,6 @@ const HELP_ENTRIES: HelpEntry[] = [
   { id: 'lock', usage: 'lock', run: 'lock', description: 'Lock vault and clear keys', category: 'Vault' },
   { id: 'status', usage: 'status', run: 'status', description: 'Show vault + sync status', category: 'Vault', common: true },
   { id: 'web', usage: 'web|ui [--open --port <n>]', run: 'web --open', description: 'Launch local web UI', category: 'Vault', common: true },
-  { id: 'desktop', usage: 'desktop [--release <tag>] [--install]', run: 'desktop', description: 'Download desktop installer', category: 'System' },
   { id: 'update', usage: 'update [--check|--install|--scheduled]', run: 'update --check', description: 'Check/install CLI npm updates', category: 'System', common: true },
   { id: 'add', usage: 'add', run: 'add', description: 'Add password entry', category: 'Entries', common: true },
   { id: 'list', usage: 'list|ls [-f -t -c]', run: 'list', description: 'List entries with filters', category: 'Entries', common: true },
@@ -250,8 +247,7 @@ function parseCommand(input: string): { cmd: string; args: string[] } {
 function showHelpList(): void {
   console.log(chalk.bold('\n  BLANK Shell Help\n'));
   console.log(chalk.gray('  Tip: run "help" for interactive command picker, or "help --list" for this view.\n'));
-  console.log(chalk.bgCyan.black(' FEATURED ') + chalk.white(' Desktop app is live: ') + chalk.cyan('desktop --install'));
-  console.log(chalk.gray('  Download only: ') + chalk.cyan('desktop') + chalk.gray(' | Check updates: ') + chalk.cyan('update --check'));
+  console.log(chalk.gray('  Web UI: ') + chalk.cyan('web --open') + chalk.gray(' | Check CLI updates: ') + chalk.cyan('update --check'));
 
   console.log(chalk.cyan('  Vault'));
   console.log(chalk.white('    init [--drive|--restore], lock, status, version'));
@@ -271,7 +267,7 @@ function showHelpList(): void {
   console.log(chalk.white('    settings [--storage hidden|public] [--folder <name>], autolock [minutes], theme [name], history|hist [n]'));
 
   console.log(chalk.cyan('\n  System'));
-  console.log(chalk.white('    desktop [--release <tag>] [--install], update [--check|--install|--scheduled]'));
+  console.log(chalk.white('    update [--check|--install|--scheduled]'));
   console.log(chalk.white('    help [--list], version, clear|cls, exit|quit|q'));
 
   console.log(chalk.red('\n  Danger'));
@@ -859,50 +855,11 @@ async function executeCommand(cmd: string, args: string[]): Promise<boolean> {
         await webCommand(webOptions);
         break;
 
-      case 'desktop':
-        const desktopOptions: {
-          release?: string;
-          output?: string;
-          asset?: string;
-          force?: boolean;
-          install?: boolean;
-          nonInteractive?: boolean;
-        } = {};
-        const releaseIdx = args.findIndex((arg) =>
-          arg === '--release' || arg === '-r' || arg === '--version'
-        );
-        if (releaseIdx !== -1 && args[releaseIdx + 1]) {
-          desktopOptions.release = args[releaseIdx + 1];
-        }
-        const outputIdx = args.findIndex((arg) => arg === '--output' || arg === '-o');
-        if (outputIdx !== -1 && args[outputIdx + 1]) {
-          desktopOptions.output = args[outputIdx + 1];
-        }
-        const assetIdx = args.findIndex((arg) => arg === '--asset' || arg === '-a');
-        if (assetIdx !== -1 && args[assetIdx + 1]) {
-          desktopOptions.asset = args[assetIdx + 1];
-        }
-        if (args.includes('--force') || args.includes('-f')) {
-          desktopOptions.force = true;
-        }
-        if (args.includes('--install') || args.includes('-i')) {
-          desktopOptions.install = true;
-        }
-        if (args.includes('--yes') || args.includes('-y')) {
-          desktopOptions.nonInteractive = true;
-        }
-        await desktopCommand(desktopOptions);
-        break;
-
       case 'update':
         const updateOptions: {
           check?: boolean;
           install?: boolean;
-          release?: string;
           currentVersion?: string;
-          asset?: string;
-          output?: string;
-          force?: boolean;
           yes?: boolean;
           json?: boolean;
           scheduled?: boolean;
@@ -913,26 +870,9 @@ async function executeCommand(cmd: string, args: string[]): Promise<boolean> {
         if (args.includes('--install') || args.includes('-i')) {
           updateOptions.install = true;
         }
-        const updateReleaseIdx = args.findIndex((arg) =>
-          arg === '--release' || arg === '-r' || arg === '--version'
-        );
-        if (updateReleaseIdx !== -1 && args[updateReleaseIdx + 1]) {
-          updateOptions.release = args[updateReleaseIdx + 1];
-        }
         const currentVersionIdx = args.findIndex((arg) => arg === '--current-version');
         if (currentVersionIdx !== -1 && args[currentVersionIdx + 1]) {
           updateOptions.currentVersion = args[currentVersionIdx + 1];
-        }
-        const updateAssetIdx = args.findIndex((arg) => arg === '--asset' || arg === '-a');
-        if (updateAssetIdx !== -1 && args[updateAssetIdx + 1]) {
-          updateOptions.asset = args[updateAssetIdx + 1];
-        }
-        const updateOutputIdx = args.findIndex((arg) => arg === '--output' || arg === '-o');
-        if (updateOutputIdx !== -1 && args[updateOutputIdx + 1]) {
-          updateOptions.output = args[updateOutputIdx + 1];
-        }
-        if (args.includes('--force') || args.includes('-f')) {
-          updateOptions.force = true;
         }
         if (args.includes('--yes') || args.includes('-y')) {
           updateOptions.yes = true;
@@ -1060,8 +1000,7 @@ export async function startShell(): Promise<void> {
 
   console.log(chalk.bold('  Secure Password Manager'));
   console.log(chalk.gray('  ─────────────────────────────────────────────────\n'));
-  console.log(chalk.bgCyan.black(' DESKTOP RELEASE LIVE ') + chalk.white(' Install: ') + chalk.cyan('desktop --install'));
-  console.log(chalk.gray('  Download: ') + chalk.cyan('desktop') + chalk.gray(' | Update check: ') + chalk.cyan('update --check'));
+  console.log(chalk.gray('  Web UI: ') + chalk.cyan('web --open') + chalk.gray(' | Update check: ') + chalk.cyan('update --check'));
   console.log('');
 
   // Load saved theme
@@ -1109,48 +1048,11 @@ export async function startShell(): Promise<void> {
           webOptions.open = true;
         }
         await webCommand(webOptions);
-      } else if (cmd === 'desktop') {
-        const desktopOptions: {
-          release?: string;
-          output?: string;
-          asset?: string;
-          force?: boolean;
-          install?: boolean;
-          nonInteractive?: boolean;
-        } = {};
-        const releaseIdx = args.findIndex((arg) =>
-          arg === '--release' || arg === '-r' || arg === '--version'
-        );
-        if (releaseIdx !== -1 && args[releaseIdx + 1]) {
-          desktopOptions.release = args[releaseIdx + 1];
-        }
-        const outputIdx = args.findIndex((arg) => arg === '--output' || arg === '-o');
-        if (outputIdx !== -1 && args[outputIdx + 1]) {
-          desktopOptions.output = args[outputIdx + 1];
-        }
-        const assetIdx = args.findIndex((arg) => arg === '--asset' || arg === '-a');
-        if (assetIdx !== -1 && args[assetIdx + 1]) {
-          desktopOptions.asset = args[assetIdx + 1];
-        }
-        if (args.includes('--force') || args.includes('-f')) {
-          desktopOptions.force = true;
-        }
-        if (args.includes('--install') || args.includes('-i')) {
-          desktopOptions.install = true;
-        }
-        if (args.includes('--yes') || args.includes('-y')) {
-          desktopOptions.nonInteractive = true;
-        }
-        await desktopCommand(desktopOptions);
       } else if (cmd === 'update') {
         const updateOptions: {
           check?: boolean;
           install?: boolean;
-          release?: string;
           currentVersion?: string;
-          asset?: string;
-          output?: string;
-          force?: boolean;
           yes?: boolean;
           json?: boolean;
           scheduled?: boolean;
@@ -1161,26 +1063,9 @@ export async function startShell(): Promise<void> {
         if (args.includes('--install') || args.includes('-i')) {
           updateOptions.install = true;
         }
-        const updateReleaseIdx = args.findIndex((arg) =>
-          arg === '--release' || arg === '-r' || arg === '--version'
-        );
-        if (updateReleaseIdx !== -1 && args[updateReleaseIdx + 1]) {
-          updateOptions.release = args[updateReleaseIdx + 1];
-        }
         const currentVersionIdx = args.findIndex((arg) => arg === '--current-version');
         if (currentVersionIdx !== -1 && args[currentVersionIdx + 1]) {
           updateOptions.currentVersion = args[currentVersionIdx + 1];
-        }
-        const updateAssetIdx = args.findIndex((arg) => arg === '--asset' || arg === '-a');
-        if (updateAssetIdx !== -1 && args[updateAssetIdx + 1]) {
-          updateOptions.asset = args[updateAssetIdx + 1];
-        }
-        const updateOutputIdx = args.findIndex((arg) => arg === '--output' || arg === '-o');
-        if (updateOutputIdx !== -1 && args[updateOutputIdx + 1]) {
-          updateOptions.output = args[updateOutputIdx + 1];
-        }
-        if (args.includes('--force') || args.includes('-f')) {
-          updateOptions.force = true;
         }
         if (args.includes('--yes') || args.includes('-y')) {
           updateOptions.yes = true;
@@ -1197,7 +1082,6 @@ export async function startShell(): Promise<void> {
         console.log(chalk.cyan('    init') + chalk.gray('          Create a new vault'));
         console.log(chalk.cyan('    init --restore') + chalk.gray('  Restore from cloud backup'));
         console.log(chalk.cyan('    web --open') + chalk.gray('    Open local web UI'));
-        console.log(chalk.cyan('    desktop') + chalk.gray('       Download desktop installer'));
         console.log(chalk.cyan('    update --check') + chalk.gray('  Check CLI updates via npm'));
         console.log(chalk.cyan('    exit') + chalk.gray('          Exit the application\n'));
       } else if (cmd !== '') {

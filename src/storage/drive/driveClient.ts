@@ -41,6 +41,7 @@ const CLOUD_STORAGE_CONFIG_PATH = path.join(os.homedir(), '.slasshy', 'cloud_sto
 const OAUTH_CALLBACK_PATH = '/';
 const OAUTH_TIMEOUT_MS = 5 * 60 * 1000;
 const PUBLIC_ROOT_FOLDER_NAME = 'BlankDrive';
+export const DEFAULT_OAUTH_BACKEND_URL = '';
 const OAUTH_CALLBACK_PORT = 3411; // Fixed port for OAuth callback
 
 // Default Google OAuth credentials (embedded for seamless user experience)
@@ -66,6 +67,7 @@ export type CloudStorageMode = 'hidden' | 'public';
 interface CloudStorageConfig {
   mode: CloudStorageMode;
   publicContentFolderName?: string;
+  oauthBackendUrl?: string;
 }
 
 function normalizePublicContentFolderName(value?: string | null): string | null {
@@ -265,6 +267,42 @@ export async function setPublicContentFolderName(folderName: string): Promise<vo
   });
 
   resetPublicFolderCache();
+}
+
+function normalizeOAuthBackendUrl(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return '';
+  }
+
+  const parsed = assertSecureServerUrl(trimmed, 'OAuth backend URL');
+  if (parsed.pathname !== '/' || parsed.search || parsed.hash) {
+    throw new Error('OAuth backend URL must be an origin without a path, query, or hash.');
+  }
+
+  return parsed.toString().replace(/\\\/$/, '');
+}
+
+/** Resolve the configured backend, or null for local OAuth. */
+export async function getOAuthBackendUrl(): Promise<string | null> {
+  const envValue = process.env.BLANKDRIVE_OAUTH_BACKEND_URL;
+  if (envValue !== undefined) {
+    return normalizeOAuthBackendUrl(envValue) || null;
+  }
+
+  const config = await readCloudStorageConfig();
+  if (config.oauthBackendUrl !== undefined) {
+    return normalizeOAuthBackendUrl(config.oauthBackendUrl) || null;
+  }
+
+  return normalizeOAuthBackendUrl(DEFAULT_OAUTH_BACKEND_URL) || null;
+}
+
+/** Persist a backend origin, or an empty value for local OAuth. */
+export async function setOAuthBackendUrl(value: string): Promise<void> {
+  const normalized = normalizeOAuthBackendUrl(value);
+  const currentConfig = await readCloudStorageConfig();
+  await writeCloudStorageConfig({ ...currentConfig, oauthBackendUrl: normalized });
 }
 
 /**
@@ -660,11 +698,11 @@ export async function performOAuthFlow(
     persistTokens?: boolean;
   }
 ): Promise<void> {
-  // Use backend OAuth service if available
-  const backendUrl = assertSecureServerUrl(
-    process.env.BLANKDRIVE_OAUTH_BACKEND_URL || 'http://localhost:3410',
-    'OAuth backend URL',
-  ).toString().replace(/\/$/, '');
+  const backendUrl = await getOAuthBackendUrl();
+  if (!backendUrl) {
+    await performLocalOAuthFlow(openBrowser, options);
+    return;
+  }
 
   try {
     // Step 1: Generate PKCE parameters locally (frontend generates verifier)
@@ -837,12 +875,7 @@ export async function performOAuthFlow(
 
   } catch (err) {
     const error = err as Error;
-    // Fallback to local OAuth if backend is unavailable
-    console.log(chalk.yellow('  ⚠ Backend unavailable, falling back to local OAuth...'));
-    console.log(chalk.gray(`  (Error: ${error.message})\n`));
-
-    // Run original local OAuth flow
-    await performLocalOAuthFlow(openBrowser, options);
+    throw new Error(`OAuth backend flow failed: ${error.message}`);
   }
 }
 

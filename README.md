@@ -100,12 +100,6 @@ The web UI itself is also local-only and does not require the OAuth backend.
 npm install -g blankdrive
 ```
 
-Desktop installer (Windows) is now available directly from CLI:
-
-```bash
-BLANK desktop --install
-```
-
 Or from source:
 
 ```bash
@@ -172,7 +166,7 @@ Practical examples:
 
 ## Google OAuth Setup (Step-by-Step)
 
-BlankDrive needs your own Google OAuth Desktop credentials.
+BlankDrive needs your own Google OAuth credentials for the local Web UI and CLI.
 
 ### 1. Create or select a Google Cloud project
 
@@ -193,15 +187,15 @@ Recommended:
 - Add your email and app name
 - Add test users (if app is not published)
 
-### 4. Create OAuth Client ID (Desktop app)
+### 4. Create OAuth Client ID
 
 - Google guide: https://developers.google.com/workspace/guides/create-credentials
 - Console shortcut: https://console.cloud.google.com/apis/credentials
-- Select: `Create Credentials` -> `OAuth client ID` -> `Desktop app`
+- Select an OAuth client type supported by your Google Cloud project for the local loopback flow.
 
 Important:
 
-- Use `Desktop app`, not `Web application`
+- Configure the loopback redirect URI used by the local Web UI/CLI flow.
 - BlankDrive uses loopback redirect (`http://127.0.0.1:<dynamic-port>`)
 
 ### 5. Run auth in BlankDrive
@@ -282,7 +276,6 @@ BLANK auth [--setup|--logout]
 BLANK generate [options]
 BLANK status
 BLANK web [--port <number>] [--open]
-BLANK desktop [--release <tag>] [--install]
 BLANK update [--check|--install|--scheduled]
 BLANK lock
 BLANK destruct
@@ -308,9 +301,8 @@ Shell includes additional commands like:
 - `history`
 - `auditlog`
 
-Desktop and CLI update are also available in shell mode:
+CLI updates are also available in shell mode:
 
-- `desktop --install`
 - `update --check`
 
 ## Web UI (Local)
@@ -328,23 +320,6 @@ Useful options:
 
 The web UI runs locally and does not use any remote backend.
 It only accepts requests via `localhost` (for example `http://localhost:4310`).
-
-## Desktop App (Tauri)
-
-BlankDrive Desktop is now officially launched for users who want a smoother and more stable local app experience while keeping the same backend logic as CLI/Web.
-
-- Same Node runtime/backend as CLI (`BLANK web` sidecar under the hood)
-- No separate desktop backend
-- Same vault, same data, same commands
-- Faster boot and lighter footprint than Electron-based approach
-
-Install desktop and update CLI directly from commands:
-
-```bash
-BLANK desktop --install
-BLANK update --check
-BLANK update --install
-```
 
 ## Restore Flow
 
@@ -406,7 +381,7 @@ What BlankDrive does not guarantee:
 
 ### `redirect_uri_mismatch`
 
-- Ensure OAuth client type is `Desktop app`
+- Ensure the OAuth client permits the local loopback redirect used by BlankDrive.
 - Then run:
 
 ```bash
